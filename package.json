@@ -1,0 +1,18 @@
+{
+	"devDependencies": {
+		"@types/joi": "^17.2.3"
+	},
+	"name": "needs-root",
+	"version": "1.0.0",
+	"description": "Root package for the NEEDS application",
+	"main": "index.js",
+	"scripts": {
+		"storybook": "cd frontend && pnpm storybook"
+	},
+	"author": "",
+	"license": "ISC",
+	"private": true,
+	"dependencies": {
+		"express": "^4.21.2"
+	}
+}

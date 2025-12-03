@@ -1,0 +1,1 @@
+alter table moderation_logs add column if not exists admin_notes text;
