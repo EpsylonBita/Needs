@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Needs - Dark & Futuristic</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Space Grotesk', 'sans-serif'],
+                    },
+                    colors: {
+                        neon: {
+                            cyan: '#00F3FF',
+                            purple: '#BC13FE',
+                            green: '#0AFF99'
+                        },
+                        dark: {
+                            bg: '#050505',
+                            card: '#0A0A0A',
+                            border: '#1F1F1F'
+                        }
+                    },
+                    boxShadow: {
+                        'neon-cyan': '0 0 20px rgba(0, 243, 255, 0.3)',
+                        'neon-purple': '0 0 20px rgba(188, 19, 254, 0.3)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background-color: #050505;
+            color: #E5E5E5;
+            overflow-x: hidden;
+        }
+
+        .grid-bg {
+            background-size: 50px 50px;
+            background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            mask-image: radial-gradient(circle at center, black 40%, transparent 100%);
+        }
+
+        .neon-border {
+            position: relative;
+        }
+
+        .neon-border::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border-radius: inherit;
+            padding: 1px;
+            background: linear-gradient(45deg, #00F3FF, #BC13FE, #0AFF99);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            opacity: 0.5;
+            transition: opacity 0.3s ease;
+        }
+
+        .neon-border:hover::before {
+            opacity: 1;
+        }
+
+        .glitch-text {
+            position: relative;
+        }
+
+        .glitch-text::before,
+        .glitch-text::after {
+            content: attr(data-text);
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .glow-hover:hover {
+            text-shadow: 0 0 10px currentColor;
+        }
+    </style>
+</head>
+
+<body class="antialiased min-h-screen flex flex-col">
+
+    <!-- Background Grid -->
+    <div class="fixed inset-0 grid-bg pointer-events-none z-0"></div>
+
+    <!-- Navigation -->
+    <nav class="fixed w-full z-50 top-0 border-b border-white/5 bg-black/50 backdrop-blur-xl">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-20">
+                <div class="flex items-center gap-3">
+                    <div
+                        class="w-10 h-10 border border-neon-cyan/50 rounded flex items-center justify-center shadow-neon-cyan">
+                        <span class="text-neon-cyan font-bold text-xl">N</span>
+                    </div>
+                    <span class="font-bold text-xl tracking-widest uppercase text-white">Needs_OS</span>
+                </div>
+                <div class="hidden md:flex items-center space-x-12">
+                    <a href="#"
+                        class="text-sm font-medium text-gray-400 hover:text-neon-cyan transition-colors tracking-widest uppercase glow-hover">Protocol</a>
+                    <a href="#"
+                        class="text-sm font-medium text-gray-400 hover:text-neon-purple transition-colors tracking-widest uppercase glow-hover">Network</a>
+                    <a href="#"
+                        class="text-sm font-medium text-gray-400 hover:text-neon-green transition-colors tracking-widest uppercase glow-hover">System</a>
+                </div>
+                <div class="flex items-center gap-6">
+                    <button
+                        class="text-sm font-medium text-gray-400 hover:text-white transition-colors tracking-widest uppercase">Access</button>
+                    <button
+                        class="neon-border px-6 py-2 rounded bg-white/5 text-white text-sm font-medium hover:bg-white/10 transition-all tracking-widest uppercase">
+                        Initialize
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="relative pt-40 pb-24 flex-grow flex items-center">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 w-full">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+
+                <!-- Left Content -->
+                <div>
+                    <div
+                        class="inline-flex items-center gap-2 px-3 py-1 rounded border border-neon-green/30 bg-neon-green/5 mb-8">
+                        <span class="w-2 h-2 rounded-full bg-neon-green animate-pulse"></span>
+                        <span class="text-xs font-mono text-neon-green">SYSTEM ONLINE</span>
+                    </div>
+
+                    <h1 class="text-6xl md:text-8xl font-bold tracking-tighter mb-8 leading-none text-white"
+                        data-text="ACQUIRE">
+                        ACQUIRE <br>
+                        <span
+                            class="text-transparent bg-clip-text bg-gradient-to-r from-neon-cyan to-neon-purple">ANYTHING.</span>
+                    </h1>
+
+                    <p class="text-xl text-gray-400 mb-12 font-light max-w-lg border-l-2 border-white/10 pl-6">
+                        Decentralized marketplace protocol. <br>
+                        Connect directly. Trade instantly. No intermediaries.
+                    </p>
+
+                    <!-- Search Input -->
+                    <div class="relative max-w-xl group">
+                        <div
+                            class="absolute -inset-0.5 bg-gradient-to-r from-neon-cyan to-neon-purple rounded opacity-30 group-hover:opacity-100 transition duration-500 blur">
+                        </div>
+                        <div class="relative bg-black flex items-center rounded border border-white/10">
+                            <span class="pl-4 text-neon-cyan font-mono">></span>
+                            <input type="text"
+                                class="w-full bg-transparent border-none focus:ring-0 text-white font-mono px-4 py-4 placeholder-gray-600"
+                                placeholder="Input search query...">
+                            <button
+                                class="px-6 py-2 mr-2 bg-white/5 hover:bg-white/10 text-white text-xs font-mono uppercase tracking-widest border border-white/10 transition-colors">
+                                Execute
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Visual -->
+                <div class="relative hidden lg:block">
+                    <div class="absolute inset-0 bg-neon-cyan/20 blur-[100px] rounded-full"></div>
+                    <div
+                        class="relative border border-white/10 bg-black/50 backdrop-blur-sm rounded-lg p-6 neon-border">
+                        <div class="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
+                            <span class="text-xs font-mono text-gray-500">LATEST_TRANSACTIONS</span>
+                            <div class="flex gap-1">
+                                <div class="w-2 h-2 rounded-full bg-red-500"></div>
+                                <div class="w-2 h-2 rounded-full bg-yellow-500"></div>
+                                <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                            </div>
+                        </div>
+
+                        <div class="space-y-4 font-mono text-sm">
+                            <div
+                                class="flex justify-between items-center text-gray-400 hover:text-white transition-colors cursor-pointer p-2 hover:bg-white/5 rounded">
+                                <span>TX_8829...AF2</span>
+                                <span class="text-neon-cyan">Real Estate</span>
+                            </div>
+                            <div
+                                class="flex justify-between items-center text-gray-400 hover:text-white transition-colors cursor-pointer p-2 hover:bg-white/5 rounded">
+                                <span>TX_1102...B99</span>
+                                <span class="text-neon-purple">Cybernetics</span>
+                            </div>
+                            <div
+                                class="flex justify-between items-center text-gray-400 hover:text-white transition-colors cursor-pointer p-2 hover:bg-white/5 rounded">
+                                <span>TX_4451...C01</span>
+                                <span class="text-neon-green">Data Cache</span>
+                            </div>
+                            <div
+                                class="flex justify-between items-center text-gray-400 hover:text-white transition-colors cursor-pointer p-2 hover:bg-white/5 rounded">
+                                <span>TX_9912...D44</span>
+                                <span class="text-neon-cyan">Transport</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- Categories Strip -->
+    <div class="border-t border-white/5 bg-black/50 backdrop-blur-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex overflow-x-auto py-8 gap-8 no-scrollbar">
+                <a href="#" class="flex-shrink-0 flex items-center gap-4 group cursor-pointer">
+                    <div
+                        class="w-12 h-12 border border-white/10 rounded flex items-center justify-center group-hover:border-neon-cyan transition-colors bg-white/5">
+                        <span class="text-xl">🏢</span>
+                    </div>
+                    <div>
+                        <div class="text-xs font-mono text-gray-500 mb-1">SECTOR_01</div>
+                        <div class="font-bold text-white group-hover:text-neon-cyan transition-colors">HABITATION</div>
+                    </div>
+                </a>
+
+                <div class="w-px h-12 bg-white/5"></div>
+
+                <a href="#" class="flex-shrink-0 flex items-center gap-4 group cursor-pointer">
+                    <div
+                        class="w-12 h-12 border border-white/10 rounded flex items-center justify-center group-hover:border-neon-purple transition-colors bg-white/5">
+                        <span class="text-xl">🏎️</span>
+                    </div>
+                    <div>
+                        <div class="text-xs font-mono text-gray-500 mb-1">SECTOR_02</div>
+                        <div class="font-bold text-white group-hover:text-neon-purple transition-colors">MOBILITY</div>
+                    </div>
+                </a>
+
+                <div class="w-px h-12 bg-white/5"></div>
+
+                <a href="#" class="flex-shrink-0 flex items-center gap-4 group cursor-pointer">
+                    <div
+                        class="w-12 h-12 border border-white/10 rounded flex items-center justify-center group-hover:border-neon-green transition-colors bg-white/5">
+                        <span class="text-xl">⚡</span>
+                    </div>
+                    <div>
+                        <div class="text-xs font-mono text-gray-500 mb-1">SECTOR_03</div>
+                        <div class="font-bold text-white group-hover:text-neon-green transition-colors">ENERGY</div>
+                    </div>
+                </a>
+
+                <div class="w-px h-12 bg-white/5"></div>
+
+                <a href="#" class="flex-shrink-0 flex items-center gap-4 group cursor-pointer">
+                    <div
+                        class="w-12 h-12 border border-white/10 rounded flex items-center justify-center group-hover:border-neon-cyan transition-colors bg-white/5">
+                        <span class="text-xl">🦾</span>
+                    </div>
+                    <div>
+                        <div class="text-xs font-mono text-gray-500 mb-1">SECTOR_04</div>
+                        <div class="font-bold text-white group-hover:text-neon-cyan transition-colors">UPGRADES</div>
+                    </div>
+                </a>
+            </div>
+        </div>
+    </div>
+
+</body>
+
+</html>

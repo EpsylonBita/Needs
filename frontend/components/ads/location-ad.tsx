@@ -1,0 +1,1 @@
+export { LocationAd } from '@/components/features/ads/location-ad'

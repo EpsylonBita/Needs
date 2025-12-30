@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Needs - Vibrant & Premium</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Outfit', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: '#0F172A',
+                    },
+                    backgroundImage: {
+                        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
+                        'hero-glow': 'conic-gradient(from 180deg at 50% 50%, #2E1065 0deg, #4C1D95 55deg, #2E1065 120deg, #0F172A 160deg, transparent 360deg)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: #0F172A;
+            color: white;
+            overflow-x: hidden;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .glass-nav {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .text-gradient {
+            background: linear-gradient(to right, #60A5FA, #A78BFA, #F472B6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .blob {
+            position: absolute;
+            filter: blur(80px);
+            z-index: -1;
+            opacity: 0.6;
+            animation: float 10s infinite ease-in-out;
+        }
+
+        @keyframes float {
+            0% {
+                transform: translate(0, 0) scale(1);
+            }
+
+            33% {
+                transform: translate(30px, -50px) scale(1.1);
+            }
+
+            66% {
+                transform: translate(-20px, 20px) scale(0.9);
+            }
+
+            100% {
+                transform: translate(0, 0) scale(1);
+            }
+        }
+
+        .card-hover {
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .card-hover:hover {
+            transform: translateY(-8px) scale(1.02);
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+
+<body class="antialiased min-h-screen">
+
+    <!-- Ambient Background -->
+    <div class="fixed inset-0 overflow-hidden pointer-events-none">
+        <div class="blob bg-blue-600 w-96 h-96 rounded-full top-0 left-0 -translate-x-1/2 -translate-y-1/2"></div>
+        <div
+            class="blob bg-purple-600 w-[500px] h-[500px] rounded-full bottom-0 right-0 translate-x-1/3 translate-y-1/3 animation-delay-2000">
+        </div>
+        <div
+            class="blob bg-pink-600 w-80 h-80 rounded-full top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-40">
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="glass-nav fixed w-full z-50 top-0">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-20">
+                <div class="flex items-center gap-2">
+                    <div class="relative">
+                        <div
+                            class="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg blur opacity-75">
+                        </div>
+                        <div
+                            class="relative w-10 h-10 bg-black rounded-lg flex items-center justify-center border border-white/10">
+                            <span class="text-gradient font-bold text-2xl">N</span>
+                        </div>
+                    </div>
+                    <span class="font-bold text-xl tracking-tight text-white">Needs</span>
+                </div>
+                <div class="hidden md:flex items-center space-x-8">
+                    <a href="#"
+                        class="text-sm font-medium text-gray-300 hover:text-white transition-colors">Discover</a>
+                    <a href="#" class="text-sm font-medium text-gray-300 hover:text-white transition-colors">Market</a>
+                    <a href="#"
+                        class="text-sm font-medium text-gray-300 hover:text-white transition-colors">Community</a>
+                </div>
+                <div class="flex items-center gap-4">
+                    <button class="text-sm font-medium text-gray-300 hover:text-white transition-colors">Log In</button>
+                    <button class="relative group">
+                        <div
+                            class="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-pink-500 rounded-full blur opacity-60 group-hover:opacity-100 transition duration-200">
+                        </div>
+                        <div class="relative px-6 py-2.5 bg-black rounded-full leading-none flex items-center">
+                            <span
+                                class="text-gray-100 group-hover:text-white transition duration-200 font-medium text-sm">Get
+                                Started</span>
+                        </div>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="relative pt-32 pb-20 lg:pt-48 lg:pb-32">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
+
+            <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel mb-8 border-blue-500/30">
+                <span class="relative flex h-2 w-2">
+                    <span
+                        class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                </span>
+                <span class="text-xs font-medium text-blue-200 tracking-wide uppercase">The Future of Local
+                    Commerce</span>
+            </div>
+
+            <h1 class="text-6xl md:text-8xl font-extrabold tracking-tight mb-8 leading-tight">
+                Everything you <br>
+                <span class="text-gradient">Need is Here.</span>
+            </h1>
+
+            <p class="text-xl md:text-2xl text-gray-400 mb-12 font-light max-w-3xl mx-auto">
+                Experience the next generation marketplace. seamless, secure, and stunningly simple.
+            </p>
+
+            <!-- Search Component -->
+            <div class="relative max-w-3xl mx-auto group">
+                <div
+                    class="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-500">
+                </div>
+                <div class="relative glass-panel rounded-2xl p-2 flex items-center">
+                    <div class="pl-4 text-gray-400">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                    </div>
+                    <input type="text"
+                        class="w-full bg-transparent border-none focus:ring-0 text-white text-lg px-4 py-3 placeholder-gray-500"
+                        placeholder="Search for products, services, or people...">
+                    <button
+                        class="bg-white text-black px-8 py-3 rounded-xl font-bold hover:bg-gray-100 transition-colors">
+                        Go
+                    </button>
+                </div>
+            </div>
+
+            <!-- Categories -->
+            <div class="flex flex-wrap justify-center gap-6 mt-16">
+                <a href="#"
+                    class="glass-panel px-8 py-4 rounded-2xl flex flex-col items-center gap-2 hover:bg-white/5 transition-all group">
+                    <span class="text-2xl group-hover:scale-110 transition-transform duration-300">🏠</span>
+                    <span class="text-sm font-medium text-gray-300">Living</span>
+                </a>
+                <a href="#"
+                    class="glass-panel px-8 py-4 rounded-2xl flex flex-col items-center gap-2 hover:bg-white/5 transition-all group">
+                    <span class="text-2xl group-hover:scale-110 transition-transform duration-300">🏎️</span>
+                    <span class="text-sm font-medium text-gray-300">Motors</span>
+                </a>
+                <a href="#"
+                    class="glass-panel px-8 py-4 rounded-2xl flex flex-col items-center gap-2 hover:bg-white/5 transition-all group">
+                    <span class="text-2xl group-hover:scale-110 transition-transform duration-300">💻</span>
+                    <span class="text-sm font-medium text-gray-300">Tech</span>
+                </a>
+                <a href="#"
+                    class="glass-panel px-8 py-4 rounded-2xl flex flex-col items-center gap-2 hover:bg-white/5 transition-all group">
+                    <span class="text-2xl group-hover:scale-110 transition-transform duration-300">🎨</span>
+                    <span class="text-sm font-medium text-gray-300">Art</span>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Content Grid -->
+    <section class="py-20">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between mb-12">
+                <h2 class="text-3xl font-bold text-white">Curated For You</h2>
+                <div class="flex gap-2">
+                    <button
+                        class="w-10 h-10 rounded-full glass-panel flex items-center justify-center hover:bg-white/10 transition-colors">←</button>
+                    <button
+                        class="w-10 h-10 rounded-full glass-panel flex items-center justify-center hover:bg-white/10 transition-colors">→</button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                <!-- Card 1 -->
+                <div class="glass-panel rounded-3xl p-4 card-hover cursor-pointer group">
+                    <div class="relative aspect-[16/10] rounded-2xl overflow-hidden mb-4">
+                        <img src="https://images.unsplash.com/photo-1600607686527-6fb886090705?auto=format&fit=crop&q=80&w=800"
+                            class="object-cover w-full h-full group-hover:scale-110 transition-transform duration-700"
+                            alt="House">
+                        <div
+                            class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        </div>
+                        <div
+                            class="absolute bottom-4 left-4 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300 translate-y-2 group-hover:translate-y-0">
+                            <p class="font-bold">View Details →</p>
+                        </div>
+                    </div>
+                    <div class="px-2">
+                        <div class="flex justify-between items-start mb-2">
+                            <h3 class="text-xl font-bold text-white">Luxury Villa</h3>
+                            <span
+                                class="bg-blue-500/20 text-blue-300 px-3 py-1 rounded-full text-xs font-bold">New</span>
+                        </div>
+                        <p class="text-gray-400 text-sm mb-4">Vouliagmeni, Athens</p>
+                        <div class="flex justify-between items-center pt-4 border-t border-white/5">
+                            <span class="text-2xl font-bold text-white">€2.5M</span>
+                            <span class="text-sm text-gray-500">Real Estate</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 2 -->
+                <div class="glass-panel rounded-3xl p-4 card-hover cursor-pointer group">
+                    <div class="relative aspect-[16/10] rounded-2xl overflow-hidden mb-4">
+                        <img src="https://images.unsplash.com/photo-1617788138017-80ad40651399?auto=format&fit=crop&q=80&w=800"
+                            class="object-cover w-full h-full group-hover:scale-110 transition-transform duration-700"
+                            alt="Car">
+                        <div
+                            class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        </div>
+                    </div>
+                    <div class="px-2">
+                        <div class="flex justify-between items-start mb-2">
+                            <h3 class="text-xl font-bold text-white">Tesla Model S</h3>
+                            <span
+                                class="bg-purple-500/20 text-purple-300 px-3 py-1 rounded-full text-xs font-bold">Electric</span>
+                        </div>
+                        <p class="text-gray-400 text-sm mb-4">Glyfada, Athens</p>
+                        <div class="flex justify-between items-center pt-4 border-t border-white/5">
+                            <span class="text-2xl font-bold text-white">€85,000</span>
+                            <span class="text-sm text-gray-500">Motors</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 3 -->
+                <div class="glass-panel rounded-3xl p-4 card-hover cursor-pointer group">
+                    <div class="relative aspect-[16/10] rounded-2xl overflow-hidden mb-4">
+                        <img src="https://images.unsplash.com/photo-1550009158-9ebf69173e03?auto=format&fit=crop&q=80&w=800"
+                            class="object-cover w-full h-full group-hover:scale-110 transition-transform duration-700"
+                            alt="Tech">
+                        <div
+                            class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        </div>
+                    </div>
+                    <div class="px-2">
+                        <div class="flex justify-between items-start mb-2">
+                            <h3 class="text-xl font-bold text-white">Vintage Audio Set</h3>
+                            <span
+                                class="bg-pink-500/20 text-pink-300 px-3 py-1 rounded-full text-xs font-bold">Rare</span>
+                        </div>
+                        <p class="text-gray-400 text-sm mb-4">Exarcheia, Athens</p>
+                        <div class="flex justify-between items-center pt-4 border-t border-white/5">
+                            <span class="text-2xl font-bold text-white">€1,200</span>
+                            <span class="text-sm text-gray-500">Audio</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+</body>
+
+</html>
