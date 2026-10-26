@@ -1,6 +1,7 @@
 export const paymentFlowCopy = {
   en: {
     checkout: 'Checkout', fee: 'Platform fee', pay: 'Pay', processing: 'Processing…', preparing: 'Preparing checkout…',
+    total: 'Total to pay', agreedTotal: 'Agreed service total', backToChat: 'Return to conversation', agreementError: 'The agreement could not be saved. Your draft is still here.',
     confirmError: 'Payment could not be confirmed. Please try again.', initError: 'The payment could not be initialized.',
     sellerHint: 'Ask the seller to complete Stripe onboarding to enable payments.',
     onboarding: 'Stripe Onboarding', onboardingIntro: 'Enable payouts by completing onboarding.', start: 'Start Onboarding', redirecting: 'Redirecting…',
@@ -15,6 +16,7 @@ export const paymentFlowCopy = {
   },
   el: {
     checkout: 'Πληρωμή', fee: 'Προμήθεια πλατφόρμας', pay: 'Πληρωμή', processing: 'Επεξεργασία…', preparing: 'Προετοιμασία πληρωμής…',
+    total: 'Συνολικό ποσό πληρωμής', agreedTotal: 'Συμφωνημένο συνολικό ποσό', backToChat: 'Επιστροφή στη συνομιλία', agreementError: 'Η συμφωνία δεν αποθηκεύτηκε. Το πρόχειρό σου παραμένει εδώ.',
     confirmError: 'Η πληρωμή δεν επιβεβαιώθηκε. Δοκίμασε ξανά.', initError: 'Η πληρωμή δεν μπόρεσε να ξεκινήσει.',
     sellerHint: 'Ζήτησε από τον πωλητή να ολοκληρώσει τη σύνδεση με το Stripe για να δέχεται πληρωμές.',
     onboarding: 'Σύνδεση με το Stripe', onboardingIntro: 'Ολοκλήρωσε τα στοιχεία σου για να μπορείς να λαμβάνεις χρήματα.', start: 'Έναρξη σύνδεσης', redirecting: 'Μεταφορά στο Stripe…',
@@ -31,6 +33,17 @@ export const paymentFlowCopy = {
 
 const greekErrors: Record<string, string> = {
   'This listing uses a rate per unit. Agree on a total in chat before online payment.': 'Αυτή η αγγελία έχει χρέωση ανά μονάδα. Συμφωνήστε συνολικό ποσό στη συνομιλία πριν από online πληρωμή.',
+  'Choose either an agreement or a milestone for checkout.': 'Επίλεξε μία συμφωνία ή ένα στάδιο για την πληρωμή.',
+  'Choose the conversation for this agreement.': 'Επίλεξε τη συνομιλία αυτής της συμφωνίας.',
+  'The payment total could not be verified.': 'Το συνολικό ποσό πληρωμής δεν μπόρεσε να επαληθευτεί. Επέστρεψε στη συνομιλία και ανανέωσε τη συμφωνία.',
+  'Your account changed. Open checkout again before paying.': 'Άλλαξε ο λογαριασμός σου. Άνοιξε ξανά τη σελίδα πληρωμής πριν συνεχίσεις.',
+  'Enter a total between €0.50 and €999,999.99, with at most two decimals.': 'Συμπλήρωσε συνολικό ποσό από 0,50 € έως 999.999,99 € με έως δύο δεκαδικά ψηφία.',
+  'Too many agreement changes. Please try again later.': 'Έγιναν πολλές αλλαγές στη συμφωνία. Δοκίμασε ξανά αργότερα.',
+  'Agreed totals are available for services charged per unit.': 'Η συμφωνία συνολικού ποσού είναι διαθέσιμη για υπηρεσίες με χρέωση ανά μονάδα.',
+  'The agreement changed. Refresh the conversation and try again.': 'Η συμφωνία άλλαξε. Ανανέωσε τη συνομιλία και δοκίμασε ξανά.',
+  'The listing changed. Propose and accept a new total.': 'Η αγγελία άλλαξε. Προτείνετε και αποδεχτείτε νέο συνολικό ποσό.',
+  'The agreement could not be saved. Refresh the conversation and try again.': 'Η συμφωνία δεν αποθηκεύτηκε. Ανανέωσε τη συνομιλία και δοκίμασε ξανά.',
+  'This agreement is locked because checkout has started.': 'Η συμφωνία δεν μπορεί να αλλάξει επειδή ξεκίνησε η διαδικασία πληρωμής.',
   'Payments are not configured.': 'Οι πληρωμές δεν είναι διαθέσιμες αυτή τη στιγμή.',
   'Payments are currently disabled': 'Οι πληρωμές δεν είναι διαθέσιμες αυτή τη στιγμή.',
   'Sign in to continue to checkout.': 'Συνδέσου για να συνεχίσεις στην πληρωμή.',
@@ -54,7 +67,7 @@ const greekErrors: Record<string, string> = {
   'Too many payment attempts. Please try again later.': 'Έγιναν πολλές προσπάθειες πληρωμής. Δοκίμασε ξανά αργότερα.',
 };
 
-type FlowErrorFallback = 'confirmError' | 'initError' | 'onboardingError' | 'accountError' | 'loadError' | 'captureError' | 'captureRefreshError';
+type FlowErrorFallback = 'confirmError' | 'initError' | 'onboardingError' | 'accountError' | 'loadError' | 'captureError' | 'captureRefreshError' | 'agreementError';
 
 /** Translate known app/server messages while keeping provider-localized Greek errors useful. */
 export function paymentFlowError(message: string | null, locale: string, fallback: FlowErrorFallback): string {

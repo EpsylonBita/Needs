@@ -26,9 +26,9 @@ export async function resolveTradeParties(listing: TradeListing, actorId: string
       throw ErrorFactory.authorization('Choose a conversation for this listing')
     }
     const { data: members, error } = await supabaseAdmin.from('chat_participants')
-      .select('user_id').eq('chat_id', chatId)
-    const ids = new Set<string>((members || []).map((member: { user_id: string }) => member.user_id))
-    if (error || ids.size !== 2 || !ids.has(actorId) || !ids.has(listing.seller_id)) {
+      .select('user_id,left_at').eq('chat_id', chatId)
+    const ids = new Set<string>((members || []).filter((member: { left_at?: string | null }) => !member.left_at).map((member: { user_id: string }) => member.user_id))
+    if (error || ids.size !== 2 || members?.some((member: { left_at?: string | null }) => !!member.left_at) || !ids.has(actorId) || !ids.has(listing.seller_id)) {
       throw ErrorFactory.authorization('You cannot use this conversation for a transaction')
     }
     otherId = [...ids].find(id => id !== listing.seller_id)!

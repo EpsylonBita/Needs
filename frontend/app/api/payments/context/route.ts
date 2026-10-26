@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase/server'
 import { resolveTradeParties } from '@/lib/payments/transaction-context'
 import { getListingPriceUnit, listingRequiresAgreedTotal } from '@/lib/listings/price-display'
 import { listingPriceNeedsConfirmation } from '@/lib/listings/price-policy'
+import { latestServiceAgreement, agreementContext, serviceAgreementEligible } from '@/lib/payments/service-agreements'
 import { withApiErrorHandler, ErrorFactory, createValidationError } from '@/lib/utils/error-handler'
 
 export const dynamic = 'force-dynamic'
@@ -25,13 +26,21 @@ export const GET = withApiErrorHandler(async (request: NextRequest) => {
   const parties = await resolveTradeParties(listing, me.id, input.data.chatId)
   const requiresAgreement = !(listing.main_category === 'Items' && listing.sub_category === 'Free') && listingRequiresAgreedTotal(listing.description)
   const isFree = parties.isFree && !requiresAgreement
+  const agreement = serviceAgreementEligible(listing) ? await latestServiceAgreement(listing.id, input.data.chatId) : null
+  if (agreement && (agreement.buyer_id !== parties.buyerId || agreement.seller_id !== parties.sellerId)) {
+    throw ErrorFactory.authorization('The agreement participants no longer match this conversation')
+  }
+  const agreementState = agreementContext(agreement, listing, me.id)
+  const accepted = agreement?.status === 'accepted' && !agreementState.agreement?.stale
+    && agreement.buyer_id === parties.buyerId && agreement.seller_id === parties.sellerId
   const { data: seller, error: sellerError } = await supabaseAdmin.from('profiles').select('stripe_account_id').eq('id', parties.sellerId).single()
   if (sellerError || !seller) throw ErrorFactory.database('Could not load the provider')
   const { data: paymentFlag, error: paymentFlagError } = await supabaseAdmin.from('feature_flags').select('enabled').eq('key', 'payments_enabled').single()
   const { data: milestoneFlag, error: milestoneFlagError } = await supabaseAdmin.from('feature_flags').select('enabled').eq('key', 'milestones_enabled').single()
   return NextResponse.json({
     listingId: listing.id, chatId: parties.chatId, buyerId: parties.buyerId, sellerId: parties.sellerId,
-    currentProfileId: me.id, isFree, canPay: !isFree && !requiresAgreement && parties.buyerId === me.id,
+    currentProfileId: me.id, isFree, canPay: !isFree && (!requiresAgreement || accepted) && parties.buyerId === me.id,
+    ...agreementState,
     requiresAgreement, priceUnit: requiresAgreement ? getListingPriceUnit(listing.description) || null : null,
     priceNeedsConfirmation: listingPriceNeedsConfirmation(Number(listing.price), listing.description, listing.main_category, listing.sub_category),
     sellerOnboarded: !!seller.stripe_account_id,

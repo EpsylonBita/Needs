@@ -81,7 +81,7 @@ The two descriptions reported in screenshots now have permanent parser, form and
 
 Controlled spelling/spacing corrections apply only to recognition; the original description is retained. Explicit discounts choose the final amount, while ranges, conflicting amounts and unsupported currencies remain editable rather than guessed. Hour/day/month rates retain their basis in the form and saved-listing displays. Manually changed amounts update price tags without losing the unit.
 
-Existing checkout treats a listing price as the complete payment. Per-unit listings therefore show an agreement hint and cannot create a fixed-total Stripe intent or milestone proposal. There is no new quantity-based billing feature or database migration; the saved description remains the source of rate terms even if its smart tag is removed.
+Per-unit listings retain their rate basis even if its smart tag is removed. The subsequent [hourly-service payment implementation](HOURLY_SERVICE_PAYMENTS_2026-10-26.md) adds a mutually accepted total in the specific conversation before checkout, with database-enforced consent and retry protection. Rate milestones and automatic quantity-based billing remain outside this flow.
 
 Clearing a per-unit price now produces a validation message before create/update writes. Older per-unit listings with a zero amount show that the price needs confirmation, including in payment context, instead of being presented as free. Explicit Items / Free listings retain their giveaway behavior.
 

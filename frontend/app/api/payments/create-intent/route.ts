@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { resolveTradeParties, requirePayer } from '@/lib/payments/transaction-context'
 import { listingRequiresAgreedTotal, RATE_PRICE_PAYMENT_ERROR } from '@/lib/listings/price-display'
+import { latestServiceAgreement, requireAcceptedAgreement, serviceAgreementEligible, AGREEMENT_CHANGED } from '@/lib/payments/service-agreements'
 import { requireTransferCapability } from '@/lib/stripe/connect'
 import { stripe } from '@/lib/stripe/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
@@ -12,6 +13,7 @@ import { rateLimitEnhanced, RateLimitConfigs } from '@/lib/utils/rate-limit-enha
 const createIntentSchema = z.object({
   listingId: z.string().uuid(),
   chatId: z.string().uuid().optional(),
+  agreementId: z.string().uuid().optional(),
 })
 
 export const dynamic = 'force-dynamic'
@@ -60,7 +62,7 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
     throw createValidationError('listingId', 'Invalid request data')
   }
 
-  const { listingId, chatId } = validation.data
+  const { listingId, chatId, agreementId } = validation.data
   const { data: listing, error: listingError } = await supabaseAdmin
     .from('listings')
     .select('id, price, description, seller_id, title, main_category, sub_category')
@@ -70,7 +72,9 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
   if (listingError || !listing) {
     throw ErrorFactory.businessLogic('Listing not found or unavailable', { userMessage: 'Listing not found or unavailable' })
   }
-  if (listingRequiresAgreedTotal(listing.description)) throw createValidationError('listingId', RATE_PRICE_PAYMENT_ERROR)
+  const isRate = listingRequiresAgreedTotal(listing.description)
+  if (isRate && (!serviceAgreementEligible(listing) || !chatId || !agreementId)) throw createValidationError('agreementId', RATE_PRICE_PAYMENT_ERROR)
+  if (agreementId && !isRate) throw createValidationError('agreementId', AGREEMENT_CHANGED)
 
   const { data: buyerProfile, error: profileError } = await supabaseAdmin
     .from('profiles')
@@ -82,7 +86,11 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
   }
 
   const parties = await resolveTradeParties(listing, buyerProfile.id, chatId)
-  requirePayer(parties, buyerProfile.id)
+  // A legacy missing rate is not a free transaction once both parties agree a positive total.
+  if (isRate) {
+    if (parties.buyerId !== buyerProfile.id) throw ErrorFactory.authorization('Only the buyer can pay for this agreement')
+  } else requirePayer(parties, buyerProfile.id)
+  const agreement = isRate ? requireAcceptedAgreement(await latestServiceAgreement(listing.id, chatId!), listing, agreementId!, parties.buyerId, parties.sellerId) : null
 
   const { data: seller, error: sellerError } = await supabaseAdmin
     .from('profiles')
@@ -93,26 +101,29 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
     throw createValidationError('listingId', 'Seller not set up for payments')
   }
 
-  const amount = Math.round(Number(listing.price) * 100)
+  const amount = Math.round(Number(agreement?.amount ?? listing.price) * 100)
   if (!Number.isFinite(amount) || amount <= 0) throw createValidationError('listingId', 'This listing does not require a payment')
-  const platformFee = Math.round(Number(listing.price) * 0.05 * 100)
+  const platformFee = Math.round(amount / 20)
   const sellerAmount = amount - platformFee
   let idempotencyKey = `intent:eur:${buyerProfile.id}:${listing.id}:${amount}`
   if (parties.isRequest) idempotencyKey += `:provider:${seller.id}`
+  if (agreement) idempotencyKey = `service-agreement:eur:${agreement.id}:${amount}`
 
   // Stripe's idempotency cache is temporary. The persisted buyer/listing payment
   // is the durable reference for abandoned checkouts and authorization expiry.
-  const { data: previous, error: previousError } = await supabaseAdmin.from('payments')
+  let previousQuery = supabaseAdmin.from('payments')
     .select('id,stripe_payment_intent,amount,platform_fee,currency,seller_id')
     .eq('buyer_id', buyerProfile.id).eq('seller_id', seller.id).eq('listing_id', listing.id).is('milestone_id', null)
-    .order('created_at', { ascending: false }).limit(1).maybeSingle()
+  previousQuery = agreement ? previousQuery.eq('agreement_id', agreement.id) : previousQuery.is('agreement_id', null)
+  const { data: previous, error: previousError } = await previousQuery.order('created_at', { ascending: false }).limit(1).maybeSingle()
   if (previousError) throw ErrorFactory.database('Previous payment could not be loaded')
   if (previous?.stripe_payment_intent) {
     const existingIntent = await stripe.paymentIntents.retrieve(previous.stripe_payment_intent)
     if (existingIntent.status === 'canceled') {
-      const { error: retirementError } = await supabaseAdmin.from('payments')
-        .update({ status: 'failed', failed_at: new Date().toISOString() })
-        .eq('id', previous.id).eq('stripe_payment_intent', existingIntent.id)
+      const { error: retirementError } = agreement
+        ? await supabaseAdmin.rpc('retire_service_agreement_payment', { p_agreement_id: agreement.id, p_buyer_id: buyerProfile.id, p_intent_id: existingIntent.id })
+        : await supabaseAdmin.from('payments').update({ status: 'failed', failed_at: new Date().toISOString() })
+          .eq('id', previous.id).eq('stripe_payment_intent', existingIntent.id)
       if (retirementError) throw ErrorFactory.database('Expired payment could not be closed')
       // Concurrent retries of the same canceled attempt share the same next key.
       idempotencyKey += `:after:${existingIntent.id}`
@@ -124,6 +135,11 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
         return NextResponse.json({ error: 'This payment is already authorized or processing. View it in Payments.' }, { status: 409 })
       }
       if (previous.seller_id !== seller.id || Math.round(Number(previous.amount) * 100) !== amount || previous.currency !== 'eur') {
+        return NextResponse.json({ error: 'This checkout has different payment details. Resolve the existing payment before starting another.' }, { status: 409 })
+      }
+      if (agreement && (existingIntent.amount !== amount || existingIntent.currency !== 'eur'
+        || existingIntent.application_fee_amount !== platformFee || existingIntent.metadata?.service_agreement_id !== agreement.id
+        || existingIntent.transfer_data?.destination !== seller.stripe_account_id)) {
         return NextResponse.json({ error: 'This checkout has different payment details. Resolve the existing payment before starting another.' }, { status: 409 })
       }
       if (!existingIntent.client_secret) throw ErrorFactory.system('Existing checkout could not be resumed')
@@ -162,6 +178,7 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
         buyer_profile_id: buyerProfile.id,
         listing_title: listing.title,
         platform_fee_percent: '5',
+        ...(agreement ? { service_agreement_id: agreement.id, chat_id: chatId! } : {}),
       },
       description: `Purchase: ${listing.title}`,
     }, { idempotencyKey })
@@ -188,7 +205,9 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
     metadata: { ip, user_agent: request.headers.get('user-agent'), request_id: requestId, intent_id: intent.id }
   })
 
-  const { data: paymentRecord, error: paymentError } = await supabaseAdmin.rpc('create_listing_payment', {
+  const { data: paymentRecord, error: paymentError } = agreement
+    ? await supabaseAdmin.rpc('create_agreed_service_payment', { p_agreement_id: agreement.id, p_buyer_id: buyerProfile.id, p_intent_id: intent.id })
+    : await supabaseAdmin.rpc('create_listing_payment', {
     p_listing_id: listing.id, p_buyer_id: buyerProfile.id, p_seller_id: seller.id,
     p_amount: amount / 100, p_platform_fee: platformFee / 100, p_intent_id: intent.id,
     p_chat_id: parties.chatId,
