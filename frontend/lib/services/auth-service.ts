@@ -1,3 +1,4 @@
+import { authEmailRedirectUrl } from '@/lib/auth/email-links';
 import { supabase } from '@/lib/supabase/client';
 
 // Note: All endpoints should NOT include /api prefix since axios baseURL already has it
@@ -34,7 +35,7 @@ const authService = {
     const { data: res, error } = await supabase.auth.signUp({
       email: data.email,
       password: data.password,
-      options: { data: { fullName: data.fullName, phoneNumber: data.phoneNumber } }
+      options: { emailRedirectTo: authEmailRedirectUrl('/auth/confirm'), data: { fullName: data.fullName, phoneNumber: data.phoneNumber } }
     })
     if (error) throw error
     return normalizeAuthResponse({ id: res.user?.id, email: res.user?.email })

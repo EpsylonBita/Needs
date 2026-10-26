@@ -12,7 +12,7 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     const run = async () => {
-      let query = supabase.from('profiles').select('id,display_name,email,reputation,stripe_account_id')
+      const query = supabase.from('profiles').select('id,display_name,email,reputation,stripe_account_id')
       const { data } = await query
       setRows((data || []) as Profile[])
     }

@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
+import { resolveTradeParties, requirePayer } from '@/lib/payments/transaction-context'
+import { requireTransferCapability } from '@/lib/stripe/connect'
 import { stripe } from '@/lib/stripe/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
+import { withApiErrorHandler, ErrorFactory, createValidationError } from '@/lib/utils/error-handler'
 import { log } from '@/lib/utils/logger'
 import { rateLimitEnhanced, RateLimitConfigs } from '@/lib/utils/rate-limit-enhanced'
-import { withApiErrorHandler, ErrorFactory, createValidationError } from '@/lib/utils/error-handler'
-import { z } from 'zod'
 
 const createMilestoneSchema = z.object({
   listingId: z.string().uuid(),
-  title: z.string().min(1).max(200),
-  amount: z.number().positive().max(10000),
+  chatId: z.string().uuid().optional(),
+  title: z.string().trim().min(1).max(200),
+  amount: z.number().positive().max(10000).refine(value => Math.abs(value * 100 - Math.round(value * 100)) < 0.000001),
+  milestoneId: z.string().uuid().optional(),
 })
 
 export const dynamic = 'force-dynamic'
@@ -47,9 +51,13 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
 
   const flag = await supabaseAdmin.from('feature_flags').select('enabled').eq('key', 'payments_enabled').single()
   const paymentsEnabledEnv = (process.env.NEXT_PUBLIC_PAYMENTS_ENABLED || '').toLowerCase() === 'true'
-  const paymentsEnabled = paymentsEnabledEnv || ((flag as any)?.data?.enabled ?? true)
+  const paymentsEnabled = paymentsEnabledEnv || !!flag.data?.enabled
   if (!paymentsEnabled) {
     throw ErrorFactory.authorization('Payments are currently disabled')
+  }
+  const milestoneFlag = await supabaseAdmin.from('feature_flags').select('enabled').eq('key', 'milestones_enabled').single()
+  if (milestoneFlag.error || milestoneFlag.data?.enabled !== true) {
+    throw ErrorFactory.authorization('Milestones are currently disabled')
   }
 
   const body = await request.json()
@@ -58,50 +66,60 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
     throw createValidationError('listingId', 'Invalid request data')
   }
 
-  const { listingId, title, amount } = validation.data
+  const { listingId, title, amount, milestoneId, chatId } = validation.data
   const { data: listing, error: listingError } = await supabaseAdmin
     .from('listings')
-    .select('id, price, seller_id, title, status')
+    .select('id, price, seller_id, title, status, main_category, sub_category')
     .eq('id', listingId)
     .eq('status', 'active')
     .single()
   if (listingError || !listing) {
-    throw ErrorFactory.businessLogic('Listing not found or unavailable')
+    throw ErrorFactory.businessLogic('Listing not found or unavailable', { userMessage: 'Listing not found or unavailable' })
   }
 
   const { data: buyerProfile, error: profileError } = await supabaseAdmin
     .from('profiles')
-    .select('id, stripe_customer_id')
+    .select('id')
     .eq('user_id', user.id)
     .single()
   if (profileError || !buyerProfile) {
     throw ErrorFactory.businessLogic('Profile not found')
   }
-  if (listing.seller_id === buyerProfile.id) {
-    throw ErrorFactory.businessLogic('Cannot create milestone for your own listing')
-  }
   if (amount > Number(listing.price)) {
-    throw ErrorFactory.validation('Milestone amount cannot exceed listing price')
+    throw createValidationError('amount', 'Milestone amount cannot exceed listing price')
   }
 
-  const { data: seller, error: sellerError } = await supabaseAdmin
-    .from('profiles')
-    .select('id, stripe_account_id, display_name')
-    .eq('id', listing.seller_id)
-    .single()
-  if (sellerError || !seller?.stripe_account_id) {
-    throw ErrorFactory.businessLogic('Seller not set up for payments')
-  }
-
-  const { data: existingMilestones } = await supabaseAdmin
+  const { data: existingMilestones, error: milestonesError } = await supabaseAdmin
     .from('milestones')
-    .select('amount')
+    .select('id, amount, title, stripe_payment_intent, status, seller_id, chat_id')
     .eq('listing_id', listingId)
-    .eq('status', 'pending')
-  const existingTotal = existingMilestones?.reduce((sum: number, m: { amount: number }) => sum + Number(m.amount), 0) || 0
+    .eq('buyer_id', buyerProfile.id)
+    .order('created_at', { ascending: false })
+  if (milestonesError) throw ErrorFactory.database('Could not load existing milestones')
+  const savedProposal = milestoneId ? existingMilestones?.find(m => m.id === milestoneId) : null
+  if (milestoneId && (!savedProposal || savedProposal.title !== title || Number(savedProposal.amount) !== amount)) {
+    throw createValidationError('milestoneId', 'Milestone proposal not found or does not match')
+  }
+  if (savedProposal?.chat_id && chatId && savedProposal.chat_id !== chatId) {
+    throw createValidationError('chatId', 'The conversation does not match this milestone')
+  }
+  const parties = await resolveTradeParties(listing, buyerProfile.id, savedProposal?.chat_id || chatId)
+  requirePayer(parties, buyerProfile.id)
+  if (savedProposal && savedProposal.seller_id !== parties.sellerId) {
+    throw createValidationError('milestoneId', 'The provider does not match this milestone')
+  }
+  const { data: seller, error: sellerError } = await supabaseAdmin
+    .from('profiles').select('id, stripe_account_id, display_name').eq('id', parties.sellerId).single()
+  if (sellerError || !seller?.stripe_account_id) throw createValidationError('listingId', 'Seller not set up for payments')
+  const partyMilestones = existingMilestones?.filter(m => m.seller_id === parties.sellerId) || []
+  const existingTotal = partyMilestones.reduce((sum: number, m: { amount: number; status: string }) => sum + (m.status === 'failed' ? 0 : Number(m.amount)), 0)
   const newTotal = existingTotal + amount
-  if (newTotal > Number(listing.price)) {
-    throw ErrorFactory.validation('Total milestone amount would exceed listing price')
+  const proposal = partyMilestones.find((m: { id: string; title: string; amount: number }) =>
+    (!milestoneId || m.id === milestoneId) && m.title === title && Number(m.amount) === amount)
+  if (milestoneId && !proposal) throw createValidationError('milestoneId', 'Milestone proposal not found or does not match')
+  const isRetry = !!proposal
+  if (!isRetry && newTotal > Number(listing.price)) {
+    throw createValidationError('amount', 'Total milestone amount would exceed listing price')
   }
 
   const amountCents = Math.round(amount * 100)
@@ -110,13 +128,32 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
 
   await supabaseAdmin.from('payment_audit_logs').insert({ action: 'milestone_intent_created', buyer_id: buyerProfile.id, seller_id: seller.id, listing_id: listing.id, amount: amount, platform_fee: platformFee / 100, metadata: { milestone_title: title, ip, user_agent: request.headers.get('user-agent'), existing_milestone_total: existingTotal, request_id: requestId } })
 
-  const idempotencyKey = `milestone:${buyerProfile.id}:${listing.id}:${title}:${amountCents}`
-  const intent = await stripe.paymentIntents.create({
+  let idempotencyKey = `milestone:eur:${buyerProfile.id}:${listing.id}:${proposal?.id || title}:${amountCents}`
+  if (parties.isRequest) idempotencyKey += `:provider:${seller.id}`
+  let reusableIntent
+  if (proposal?.stripe_payment_intent) {
+    const previous = await stripe.paymentIntents.retrieve(proposal.stripe_payment_intent)
+    if (previous.status === 'canceled') {
+      const retired = await supabaseAdmin.from('payments').update({ status: 'failed' }).eq('stripe_payment_intent', previous.id).eq('buyer_id', buyerProfile.id)
+      if (retired.error) throw ErrorFactory.database('Could not retire canceled payment')
+      const failed = await supabaseAdmin.from('milestones').update({ status: 'failed' }).eq('id', proposal.id).eq('buyer_id', buyerProfile.id)
+      if (failed.error) throw ErrorFactory.database('Could not retire canceled milestone')
+      idempotencyKey += `:after:${previous.id}`
+    } else if (['requires_payment_method', 'requires_confirmation', 'requires_action'].includes(previous.status)) {
+      if (previous.currency !== 'eur' || previous.amount !== amountCents) throw createValidationError('amount', 'Existing payment amount or currency differs from this milestone')
+      reusableIntent = previous
+    } else {
+      return NextResponse.json({ error: 'This milestone payment is already authorized or completed. View it in your dashboard.' }, { status: 409 })
+    }
+  }
+  if (!reusableIntent) await requireTransferCapability(seller.stripe_account_id)
+  const intent = reusableIntent || await stripe.paymentIntents.create({
     amount: amountCents,
-    currency: 'usd',
+    currency: 'eur',
     application_fee_amount: platformFee,
     transfer_data: { destination: seller.stripe_account_id },
     capture_method: 'manual',
+    ...(user.email_confirmed_at && user.email ? { receipt_email: user.email } : {}),
     metadata: {
       listing_id: listing.id,
       seller_profile_id: seller.id,
@@ -129,25 +166,28 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
     description: `Milestone: ${title} for ${listing.title}`,
   }, { idempotencyKey })
 
-  const { error: milestoneError } = await supabaseAdmin
-    .from('milestones')
-    .insert({
-      listing_id: listing.id,
-      buyer_id: buyerProfile.id,
-      seller_id: seller.id,
-      title: title,
-      amount: amount,
-      stripe_payment_intent: intent.id,
-      status: 'pending',
-      buyer_confirmed: false,
-      seller_confirmed: false,
-    })
+  const { data: records, error: milestoneError } = await supabaseAdmin.rpc('create_milestone_payment', {
+    p_listing_id: listing.id,
+    p_buyer_id: buyerProfile.id,
+    p_seller_id: seller.id,
+    p_title: title,
+    p_amount: amount,
+    p_platform_fee: platformFee / 100,
+    p_intent_id: intent.id,
+    p_milestone_id: proposal?.id || null,
+    p_chat_id: parties.chatId,
+  })
   if (milestoneError) {
-    await stripe.paymentIntents.cancel(intent.id)
+    // A transport timeout can occur after commit. Do not cancel a possibly
+    // persisted intent; deterministic SQL validation failures are safe to undo.
+    if (milestoneError.code === 'P0001' || milestoneError.code?.startsWith('23')) {
+      await stripe.paymentIntents.cancel(intent.id)
+    }
     throw ErrorFactory.database('Failed to create milestone record')
   }
+  if (!records?.milestone_id || !records?.payment_id) throw ErrorFactory.database('Invalid milestone creation result')
 
   log('info', 'milestone_intent_created', { intent_id: intent.id, milestone_title: title, buyer_id: buyerProfile.id, seller_id: seller.id, listing_id: listing.id, amount: amount, ip, requestId })
 
-  return NextResponse.json({ clientSecret: intent.client_secret, milestoneId: intent.id, platformFee: platformFee / 100, totalAmount: amount, sellerAmount: sellerAmount / 100, title: title, requestId })
+  return NextResponse.json({ clientSecret: intent.client_secret, milestoneId: records.milestone_id, paymentId: records.payment_id, intentId: intent.id, platformFee: platformFee / 100, totalAmount: amount, sellerAmount: sellerAmount / 100, title: title, requestId })
 })

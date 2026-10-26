@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 let PostHandler: any
 
 const scenario: any = {
@@ -16,19 +16,22 @@ const scenario: any = {
 // Mock dependencies first (hoisted)
 vi.mock('@/lib/stripe/server', () => ({
   stripe: {
+    accounts: { retrieve: vi.fn(async () => ({ id: 'acct_seller', capabilities: { transfers: 'active' } })) },
     paymentIntents: {
       create: vi.fn(),
+      retrieve: vi.fn(),
       cancel: vi.fn()
     }
   }
 }))
 
-vi.mock('@/lib/utils/error-handler', () => ({
-  withApiErrorHandler: (handler: any) => handler
-}))
+// Exercise the real error boundary, including ErrorFactory and HTTP status mapping.
 
 vi.mock('@/lib/supabase/server', () => ({
   supabaseAdmin: {
+    rpc: vi.fn(async () => scenario.paymentsInsertError
+      ? { data: null, error: { code: scenario.paymentErrorCode || 'P0001', message: 'Failed to create payment record' } }
+      : { data: { payment_id: 'payment-record-id' }, error: null }),
     auth: {
       getUser: vi.fn(async (token?: string) => {
         if (token === 'invalid-token') {
@@ -40,14 +43,19 @@ vi.mock('@/lib/supabase/server', () => ({
     from: vi.fn((table: string) => {
       const state: any = {}
       const chain: any = {
-        select: vi.fn().mockImplementation(() => chain),
+        select: vi.fn().mockImplementation((columns: string) => { state.columns = columns; return chain }),
         eq: vi.fn().mockImplementation((field: string, value: any) => {
           state[field] = value
           return chain
         }),
         single: vi.fn(),
+        maybeSingle: vi.fn(async () => ({ data: scenario.existingPayment || null, error: null })),
+        is: vi.fn().mockImplementation(() => chain),
+        order: vi.fn().mockImplementation(() => chain),
+        limit: vi.fn().mockImplementation(() => chain),
         insert: vi.fn().mockResolvedValue({ data: null, error: null }),
-        update: vi.fn().mockResolvedValue({ data: null, error: null })
+        update: vi.fn().mockImplementation(() => chain),
+        then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: null, error: null }).then(resolve),
       }
 
       if (table === 'feature_flags') {
@@ -57,8 +65,9 @@ vi.mock('@/lib/supabase/server', () => ({
 
       if (table === 'profiles') {
         chain.single.mockImplementation(async () => {
+          if (state.columns.includes('stripe_customer_id')) return { data: null, error: { message: 'column profiles.stripe_customer_id does not exist' } }
           if (state['user_id']) {
-            return { data: { id: scenario.buyerId, stripe_customer_id: 'cus_test123' } }
+            return { data: { id: scenario.buyerId } }
           }
           if (state['id']) {
             return scenario.sellerHasPayouts
@@ -74,7 +83,7 @@ vi.mock('@/lib/supabase/server', () => ({
         chain.single.mockImplementation(async () => {
           const statusOk = state['status'] === 'active'
           if (statusOk && scenario.listingStatus === 'active') {
-            return { data: { id: scenario.listingId, price: 100, seller_id: scenario.sellerId, title: 'Test Item', status: 'active' }, error: null }
+            return { data: { id: scenario.listingId, price: 100, seller_id: scenario.sellerId, title: 'Test Item', status: 'active', main_category: 'Items', sub_category: 'Sell' }, error: null }
           }
           return { data: null, error: null }
         })
@@ -143,6 +152,8 @@ describe('Secure Payment Intent Creation', () => {
     scenario.sellerHasPayouts = true
     scenario.auditLogError = false
     scenario.listingStatus = 'active'
+    scenario.existingPayment = null
+    scenario.paymentErrorCode = undefined
     
     // Get mock functions from the mocked modules
     const stripeModule = await import('@/lib/stripe/server') as any
@@ -185,6 +196,24 @@ describe('Secure Payment Intent Creation', () => {
   })
 
   describe('Authentication & Authorization', () => {
+    it('rejects a seller whose Stripe transfers capability is inactive', async () => {
+      const { stripe } = await import('@/lib/stripe/server')
+      vi.mocked(stripe.accounts.retrieve).mockResolvedValueOnce({ id: 'acct_seller', capabilities: { transfers: 'inactive' } } as any)
+      expect((await PostHandler(mockRequest)).status).toBe(400)
+      expect(mockStripePaymentIntentsCreate).not.toHaveBeenCalled()
+    })
+
+    it('requests a receipt only for the authenticated verified email', async () => {
+      mockSupabaseAuthGetUser.mockResolvedValueOnce({ data: { user: { id: 'test-user-id', email: 'verified@example.com', email_confirmed_at: '2026-10-14' } }, error: null })
+      expect((await PostHandler(mockRequest)).status).toBe(200)
+      expect(mockStripePaymentIntentsCreate).toHaveBeenCalledWith(expect.objectContaining({ receipt_email: 'verified@example.com' }), expect.anything())
+    })
+
+    it('does not request receipts for an unverified email', async () => {
+      mockSupabaseAuthGetUser.mockResolvedValueOnce({ data: { user: { id: 'test-user-id', email: 'unverified@example.com' } }, error: null })
+      expect((await PostHandler(mockRequest)).status).toBe(200)
+      expect(mockStripePaymentIntentsCreate.mock.calls[0][0]).not.toHaveProperty('receipt_email')
+    })
     it('should reject requests without authentication', async () => {
       const requestWithoutAuth = new NextRequest('http://localhost:3000/api/payments/create-intent', {
         method: 'POST',
@@ -252,7 +281,7 @@ describe('Secure Payment Intent Creation', () => {
 
       expect(response.status).toBe(400)
       expect(data.error).toBe('Invalid request data')
-      expect(data.details).toBeDefined()
+      expect(data.code).toBe('VALIDATION_LISTINGID')
     })
 
     it('should reject missing listingId', async () => {
@@ -317,7 +346,7 @@ describe('Secure Payment Intent Creation', () => {
       // Verify Stripe was called with secure metadata
       expect(mockStripePaymentIntentsCreate).toHaveBeenCalledWith({
         amount: 10000,
-        currency: 'usd',
+        currency: 'eur',
         application_fee_amount: 500,
         transfer_data: { destination: 'seller-stripe-account' },
         capture_method: 'manual',
@@ -361,14 +390,61 @@ describe('Secure Payment Intent Creation', () => {
     it('should handle Stripe errors gracefully', async () => {
       mockStripePaymentIntentsCreate.mockRejectedValue(new Error('Stripe API error'))
 
-      await expect(PostHandler(mockRequest)).rejects.toThrow('Stripe API error')
+      const response = await PostHandler(mockRequest)
+      expect(response.status).toBe(500)
+      expect((await response.json()).code).toBe('SYSTEM_ERROR')
     })
 
     it('should rollback Stripe intent if database insert fails', async () => {
       scenario.paymentsInsertError = true
 
-      await expect(PostHandler(mockRequest)).rejects.toThrow('Failed to create payment record')
+      const response = await PostHandler(mockRequest)
+      expect(response.status).toBe(500)
       expect(mockStripePaymentIntentsCancel).toHaveBeenCalledWith('pi_test123')
+    })
+  })
+
+  describe('Checkout recovery', () => {
+    const existing = () => ({ id: 'existing-payment', stripe_payment_intent: 'pi_previous', amount: 100, platform_fee: 5, currency: 'eur', seller_id: scenario.sellerId })
+
+    it('reuses a persisted unfinished intent instead of creating another after idempotency retention', async () => {
+      scenario.existingPayment = existing()
+      const { stripe } = await import('@/lib/stripe/server')
+      vi.mocked(stripe.paymentIntents.retrieve).mockResolvedValue({ id: 'pi_previous', client_secret: 'previous_secret', status: 'requires_payment_method' } as any)
+      const response = await PostHandler(mockRequest)
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ paymentId: 'pi_previous', clientSecret: 'previous_secret', totalAmount: 100 })
+      expect(mockStripePaymentIntentsCreate).not.toHaveBeenCalled()
+    })
+
+    it('starts a deterministic new attempt only after Stripe confirms the previous intent was canceled', async () => {
+      scenario.existingPayment = existing()
+      const { stripe } = await import('@/lib/stripe/server')
+      vi.mocked(stripe.paymentIntents.retrieve).mockResolvedValue({ id: 'pi_previous', status: 'canceled' } as any)
+      const response = await PostHandler(mockRequest)
+      expect(response.status).toBe(200)
+      expect(mockStripePaymentIntentsCreate).toHaveBeenCalledWith(expect.any(Object), { idempotencyKey: expect.stringMatching(/:after:pi_previous$/) })
+      const paymentChain = mockSupabaseFrom.mock.results.find((result: any, index: number) => mockSupabaseFrom.mock.calls[index][0] === 'payments' && result.value.update.mock.calls.length)?.value
+      expect(paymentChain.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }))
+    })
+
+    it('does not create or cancel a charge when the existing Stripe state cannot be verified', async () => {
+      scenario.existingPayment = existing()
+      const { stripe } = await import('@/lib/stripe/server')
+      vi.mocked(stripe.paymentIntents.retrieve).mockRejectedValue(new Error('Stripe unavailable'))
+      expect((await PostHandler(mockRequest)).status).toBe(500)
+      expect(mockStripePaymentIntentsCreate).not.toHaveBeenCalled()
+      expect(mockStripePaymentIntentsCancel).not.toHaveBeenCalled()
+    })
+
+    it('does not offer another checkout for an already authorized payment', async () => {
+      scenario.existingPayment = existing()
+      const { stripe } = await import('@/lib/stripe/server')
+      vi.mocked(stripe.paymentIntents.retrieve).mockResolvedValue({ id: 'pi_previous', status: 'requires_capture' } as any)
+      const response = await PostHandler(mockRequest)
+      expect(response.status).toBe(409)
+      expect((await response.json()).error).toMatch(/already authorized/)
+      expect(mockStripePaymentIntentsCreate).not.toHaveBeenCalled()
     })
   })
 

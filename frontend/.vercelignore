@@ -1,0 +1,10 @@
+# Deploy application source only. Credentials are supplied as Vercel variables.
+.env
+.env.*
+.vercel
+.next
+node_modules
+.git
+coverage
+*.log
+*.tsbuildinfo

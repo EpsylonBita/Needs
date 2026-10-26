@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAdmin } from '@/lib/auth/admin'
 import { supabaseAdmin } from '@/lib/supabase/server'
 import { withApiErrorHandler, ErrorFactory } from '@/lib/utils/error-handler'
 
 export const dynamic = 'force-dynamic'
 
 export const GET = withApiErrorHandler(async (request: NextRequest) => {
+  const auth = await requireAdmin(request)
+  if (!auth.allowed) throw ErrorFactory.authorization(auth.reason || 'forbidden')
   const url = new URL(request.url)
   const status = url.searchParams.get('status')
   const limit = Number(url.searchParams.get('limit') || '20')

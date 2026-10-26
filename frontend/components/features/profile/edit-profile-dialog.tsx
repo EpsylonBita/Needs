@@ -1,343 +1,153 @@
-"use client"
+'use client'
 
-import React, { useState } from "react"
+import { useId, useLayoutEffect, useRef, useState } from 'react'
+import Image from 'next/image'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { Camera, Loader2 } from 'lucide-react'
+import { useForm } from 'react-hook-form'
+import * as z from 'zod'
 
-import Image from "next/image"
-import { useRouter } from "next/navigation"
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { useToast } from '@/components/ui/use-toast'
+import { useI18n } from '@/contexts/i18n-context'
+import { useAuth } from '@/contexts/auth-context'
+import { profileService, type ProfileData, type UpdateProfileData } from '@/lib/services/profile-service'
+import { profileFormCopy, profileFormError, profilePhotoTypes } from './profile-form-copy'
 
-import { zodResolver } from "@hookform/resolvers/zod"
-import { Camera, Upload } from "lucide-react"
-import { useForm } from "react-hook-form"
-import * as z from "zod"
-
-import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { useToast } from "@/components/ui/use-toast"
-import { profileService, UpdateProfileData, type ProfileData } from "@/lib/services/profile-service"
-import { cn } from "@/lib/utils"
-
-const profileSchema = z.object({
-  fullName: z.string().min(2, "Name must be at least 2 characters"),
-  title: z.string().min(2, "Title must be at least 2 characters"),
-  email: z.string().email("Invalid email address"),
-  location: z.string().min(2, "Location must be at least 2 characters"),
-  bio: z.string().min(10, "Bio must be at least 10 characters"),
-})
-
-type ProfileFormData = z.infer<typeof profileSchema>
-
+type ProfileFormData = { fullName: string; email: string; title: string; location: string; bio: string }
 interface EditProfileDialogProps {
-  defaultValues: Pick<ProfileData, 'fullName' | 'title' | 'email' | 'location' | 'bio' | 'avatar'>;
-  onUpdate?: (data: ProfileData) => void;
-  currentAvatar?: string;
+  defaultValues: Pick<ProfileData, 'fullName' | 'title' | 'email' | 'location' | 'bio' | 'avatar'>
+  onUpdate?: (data: ProfileData) => Promise<void> | void
+  currentAvatar?: string
 }
 
 export function EditProfileDialog({ defaultValues, onUpdate, currentAvatar }: EditProfileDialogProps) {
-  const [photoPreview, setPhotoPreview] = useState<string | null>(currentAvatar || null)
-  const [isDragging, setIsDragging] = useState(false)
-  const [isOpen, setIsOpen] = useState(false)
-  const [photoFile, setPhotoFile] = useState<File | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const { locale } = useI18n()
+  const { user } = useAuth()
+  const copy = profileFormCopy[locale === 'el' ? 'el' : 'en']
   const { toast } = useToast()
-  const router = useRouter()
-
-  const form = useForm<ProfileFormData>({
-    resolver: zodResolver(profileSchema),
-    defaultValues: {
-      fullName: defaultValues.fullName || '',
-      title: defaultValues.title || '',
-      email: defaultValues.email || '',
-      location: defaultValues.location || '',
-      bio: defaultValues.bio || '',
-    },
+  const id = useId()
+  const photoVersion = useRef(0)
+  const editingUserId = useRef<string | undefined>(undefined)
+  const currentUserId = useRef(user?.id)
+  useLayoutEffect(() => {
+    currentUserId.current = user?.id
+    return () => { currentUserId.current = undefined }
+  }, [user?.id])
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(currentAvatar || null)
+  const schema = z.object({
+    fullName: z.string().trim().min(2, copy.nameError).max(100, copy.nameError),
+    email: z.string().trim().email(copy.emailError).max(254, copy.emailError),
+    title: z.string().trim().max(100, copy.titleError),
+    location: z.string().trim().max(160, copy.locationError),
+    bio: z.string().trim().max(1000, copy.bioError),
   })
+  const values = (): ProfileFormData => ({
+    fullName: defaultValues.fullName || '', email: defaultValues.email || '', title: defaultValues.title || '',
+    location: defaultValues.location || '', bio: defaultValues.bio || '',
+  })
+  const form = useForm<ProfileFormData>({ resolver: zodResolver(schema), defaultValues: values() })
 
-  const handlePhotoDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    setIsDragging(false)
-    const file = e.dataTransfer.files[0]
-    if (file) {
-      handlePhotoFile(file)
+  function changeOpen(next: boolean) {
+    if (busy) return
+    ++photoVersion.current
+    if (next) {
+      editingUserId.current = user?.id
+      form.reset(values())
+      setError('')
+      setPhotoFile(null)
+      setPhotoPreview(currentAvatar || null)
     }
+    setOpen(next)
   }
 
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      handlePhotoFile(file)
-    }
-  }
-
-  const handlePhotoFile = (file: File) => {
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      toast({
-        title: "Invalid file type",
-        description: "Please upload an image file",
-        variant: "destructive",
-      })
+  function selectPhoto(file?: File) {
+    if (!file || busy) return
+    const version = ++photoVersion.current
+    setError('')
+    setPhotoFile(null)
+    setPhotoPreview(currentAvatar || null)
+    if (!profilePhotoTypes.includes(file.type) || file.size > 5 * 1024 * 1024) {
+      setError(copy.invalidImage)
       return
     }
-
-    // Validate file size (5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      toast({
-        title: "File too large",
-        description: "Image must be less than 5MB",
-        variant: "destructive",
-      })
-      return
-    }
-
-    setPhotoFile(file)
     const reader = new FileReader()
-    reader.onload = (e) => setPhotoPreview(e.target?.result as string)
+    reader.onload = () => {
+      if (version !== photoVersion.current) return
+      setPhotoPreview(String(reader.result))
+      setPhotoFile(file)
+    }
+    reader.onerror = () => { if (version === photoVersion.current) setError(copy.imageReadError) }
     reader.readAsDataURL(file)
   }
 
-  const onSubmit = async (data: ProfileFormData) => {
+  async function submit(data: ProfileFormData) {
+    if (busy) return
+    setBusy(true)
+    setError('')
     try {
-      setIsSubmitting(true)
-      console.log('Form data submitted:', data)
-
-      // Prepare update data with all fields
-      const updateData: UpdateProfileData = {
-        fullName: data.fullName?.trim(),
-        title: data.title?.trim(),
-        email: data.email?.trim(),
-        location: data.location?.trim(),
-        bio: data.bio?.trim(),
-      }
-
-      // Remove undefined values
-      const cleanedData: UpdateProfileData = Object.fromEntries(
-        Object.entries(updateData).filter(([_, value]) => value !== undefined)
-      ) as UpdateProfileData;
-
-      // Add photo if changed
-      if (photoFile) {
-        cleanedData.avatar = photoFile;
-      }
-
-      console.log('Sending update request with data:', cleanedData);
-      const updatedProfile = await profileService.updateProfile(cleanedData);
-      console.log('Received updated profile:', updatedProfile);
-
-      // Update parent component
-      if (onUpdate) {
-        onUpdate(updatedProfile)
-      }
-
-      // Show success message
-      toast({
-        title: "Success",
-        description: "Profile updated successfully",
-      })
-
-      // Close dialog
-      setIsOpen(false)
-      
-    } catch (error: unknown) {
-      console.error('Profile update error:', error)
-      
-      const err = error as { message?: string; response?: { status?: number } } | Error
-      if ((err as { response?: { status?: number } })?.response?.status === 401) {
-        toast({
-          title: "Session expired",
-          description: "Please log in again",
-          variant: "destructive",
-        })
-        router.push('/login')
-      } else {
-        toast({
-          title: "Error",
-          description: (err as { message?: string })?.message || "Failed to update profile",
-          variant: "destructive",
-        })
-      }
-    } finally {
-      setIsSubmitting(false)
-    }
+      const expectedUserId = editingUserId.current
+      if (!expectedUserId || currentUserId.current !== expectedUserId) throw new Error('Your session changed. Please try again.')
+      const update: UpdateProfileData = { ...data, ...(photoFile ? { avatar: photoFile } : {}) }
+      const saved = await profileService.updateProfile(update, expectedUserId)
+      if (currentUserId.current !== expectedUserId) throw new Error('Your session changed. Please try again.')
+      await onUpdate?.(saved)
+      if (currentUserId.current !== expectedUserId) throw new Error('Your session changed. Please try again.')
+      toast({ title: copy.saved, description: saved.emailChangePending ? copy.pendingEmail : copy.savedDescription })
+      setOpen(false)
+    } catch (failure) {
+      setError(profileFormError(failure, locale, copy.saveError))
+    } finally { setBusy(false) }
   }
 
-  // Reset form when dialog opens
-  React.useEffect(() => {
-    if (isOpen) {
-      // Reset form with current values
-      form.reset({
-        fullName: defaultValues.fullName || '',
-        title: defaultValues.title || '',
-        email: defaultValues.email || '',
-        location: defaultValues.location || '',
-        bio: defaultValues.bio || '',
-      })
-      // Reset photo state
-      setPhotoPreview(currentAvatar || null)
-      setPhotoFile(null)
-    }
-  }, [isOpen, defaultValues, currentAvatar, form])
+  const fields = [
+    { name: 'fullName', label: copy.fullName, max: 100, required: true, autoComplete: 'name' },
+    { name: 'email', label: copy.email, max: 254, required: true, autoComplete: 'email' },
+    { name: 'title', label: copy.title, max: 100, required: false, autoComplete: 'organization-title' },
+    { name: 'location', label: copy.location, max: 160, required: false, autoComplete: 'address-level2' },
+  ] as const
 
-  return (
-    <Dialog 
-      open={isOpen} 
-      onOpenChange={(open) => {
-        if (!isSubmitting) {
-          setIsOpen(open)
-        }
-      }}
-    >
-      <DialogTrigger asChild>
-        <Button variant="outline">Edit Profile</Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-[600px]">
-        <DialogHeader>
-          <DialogTitle>Edit Profile</DialogTitle>
-          <DialogDescription>
-            Make changes to your profile information here.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          {/* Photo Upload Section */}
-          <div className="space-y-2">
-            <Label>Profile Photo</Label>
-            <div
-              className={cn(
-                "relative group cursor-pointer rounded-xl border-2 border-dashed p-4 transition-all",
-                isDragging ? "border-primary bg-primary/5" : "border-muted hover:border-primary",
-              )}
-              onDragOver={(e) => {
-                e.preventDefault()
-                setIsDragging(true)
-              }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={handlePhotoDrop}
-            >
-              <input
-                type="file"
-                accept="image/*"
-                className="absolute inset-0 opacity-0 cursor-pointer"
-                onChange={handlePhotoChange}
-                aria-label="Upload profile photo"
-              />
-              <div className="flex flex-col items-center gap-2 text-center">
-                {photoPreview ? (
-                  <div className="relative w-32 h-32">
-                    <Image
-                      src={photoPreview}
-                      alt="Profile preview"
-                      fill
-                      sizes="128px"
-                      className="object-cover rounded-full"
-                    />
-                    <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <Camera className="w-8 h-8 text-white" />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="w-32 h-32 rounded-full bg-muted flex items-center justify-center">
-                    <Upload className="w-8 h-8 text-muted-foreground" />
-                  </div>
-                )}
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">
-                    Drop your image here, or click to browse
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Supports JPG, PNG, GIF (Max 5MB)
-                  </p>
-                </div>
-              </div>
-            </div>
+  return <Dialog open={open} onOpenChange={changeOpen}>
+    <DialogTrigger asChild><Button variant="outline" className="min-h-11 rounded-xl">{copy.edit}</Button></DialogTrigger>
+    <DialogContent closeLabel={copy.close} closeDisabled={busy} className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[560px] overflow-y-auto rounded-2xl p-5 sm:rounded-2xl sm:p-6">
+      <DialogHeader className="pr-8 text-left"><DialogTitle className="text-xl">{copy.edit}</DialogTitle><DialogDescription className="leading-relaxed">{copy.description}</DialogDescription></DialogHeader>
+      <form noValidate onSubmit={event => { void form.handleSubmit(submit)(event) }} aria-busy={busy} className="space-y-5">
+        <label onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); selectPhoto(event.dataTransfer.files[0]) }} className="relative flex cursor-pointer items-center gap-4 rounded-xl border border-dashed border-border bg-muted/30 p-3 focus-within:ring-2 focus-within:ring-ring">
+          <input type="file" accept={profilePhotoTypes.join(',')} disabled={busy} aria-label={copy.uploadAvatar} onChange={event => selectPhoto(event.target.files?.[0])} className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-wait" />
+          <span className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-primary">
+            {photoPreview ? <Image src={photoPreview} alt={copy.preview} fill sizes="64px" className="object-cover" /> : <Camera className="h-6 w-6" aria-hidden="true" />}
+          </span>
+          <span className="min-w-0 space-y-1"><span className="block text-sm font-medium">{copy.photo}</span><span className="block text-xs leading-relaxed text-muted-foreground">{copy.chooseImage}<br />{copy.imageHint}</span></span>
+        </label>
+        <fieldset disabled={busy} className="grid min-w-0 gap-4 sm:grid-cols-2">
+          {fields.map(field => <div key={field.name} className="min-w-0 space-y-2">
+            <Label htmlFor={`${id}-${field.name}`}>{field.label}{!field.required && <span className="ml-1 text-xs font-normal text-muted-foreground">({copy.optional})</span>}</Label>
+            <Input id={`${id}-${field.name}`} type={field.name === 'email' ? 'email' : 'text'} required={field.required} maxLength={field.max} autoComplete={field.autoComplete}
+              aria-invalid={!!form.formState.errors[field.name]} aria-describedby={form.formState.errors[field.name] ? `${id}-${field.name}-error` : field.name === 'email' ? `${id}-email-hint` : undefined}
+              className="h-11 rounded-xl" {...form.register(field.name)} />
+            {form.formState.errors[field.name] && <p id={`${id}-${field.name}-error`} role="alert" className="text-xs text-destructive">{form.formState.errors[field.name]?.message}</p>}
+            {field.name === 'email' && <p id={`${id}-email-hint`} className="text-xs leading-relaxed text-muted-foreground">{copy.emailHint}</p>}
+          </div>)}
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor={`${id}-bio`}>{copy.bio}<span className="ml-1 text-xs font-normal text-muted-foreground">({copy.optional})</span></Label>
+            <Textarea id={`${id}-bio`} maxLength={1000} aria-invalid={!!form.formState.errors.bio} aria-describedby={form.formState.errors.bio ? `${id}-bio-error` : undefined} className="min-h-24 resize-y rounded-xl" {...form.register('bio')} />
+            {form.formState.errors.bio && <p id={`${id}-bio-error`} role="alert" className="text-xs text-destructive">{form.formState.errors.bio.message}</p>}
           </div>
-
-          {/* Form Fields */}
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="fullName">Full Name</Label>
-              <Input
-                id="fullName"
-                {...form.register("fullName")}
-              />
-              {form.formState.errors.fullName && (
-                <p className="text-sm text-destructive">{form.formState.errors.fullName.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="title">Professional Title</Label>
-              <Input
-                id="title"
-                {...form.register("title")}
-              />
-              {form.formState.errors.title && (
-                <p className="text-sm text-destructive">{form.formState.errors.title.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                {...form.register("email")}
-              />
-              {form.formState.errors.email && (
-                <p className="text-sm text-destructive">{form.formState.errors.email.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="location">Location</Label>
-              <Input
-                id="location"
-                {...form.register("location")}
-              />
-              {form.formState.errors.location && (
-                <p className="text-sm text-destructive">{form.formState.errors.location.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="bio">Bio</Label>
-              <Textarea
-                id="bio"
-                {...form.register("bio")}
-                className="min-h-[100px] resize-none"
-              />
-              {form.formState.errors.bio && (
-                <p className="text-sm text-destructive">{form.formState.errors.bio.message}</p>
-              )}
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex justify-end gap-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setIsOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? "Saving..." : "Save Changes"}
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-} 
+        </fieldset>
+        {error && <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm leading-relaxed text-destructive">{error}</p>}
+        <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
+          <Button type="button" variant="outline" disabled={busy} onClick={() => changeOpen(false)} className="min-h-11 rounded-xl">{copy.cancel}</Button>
+          <Button type="submit" disabled={busy} className="min-h-11 rounded-xl">{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}{busy ? copy.saving : copy.save}</Button>
+        </div>
+      </form>
+    </DialogContent>
+  </Dialog>
+}

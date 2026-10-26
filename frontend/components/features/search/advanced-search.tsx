@@ -3,7 +3,6 @@
 import { useRouter } from 'next/navigation';
 
 import { SlidersHorizontal } from 'lucide-react';
-import { parseAsInteger, parseAsString, useQueryState } from 'nuqs';
 
 import { AnimatedSearchInput } from "@/components/ui/animated-search-input";
 import { Button } from "@/components/ui/button";
@@ -23,6 +22,7 @@ import {
 } from "@/components/ui/sheet";
 import { Slider } from "@/components/ui/slider";
 import { useI18n } from '@/contexts/i18n-context';
+import { useSearchState } from '@/hooks/use-search-state';
 
 interface Category {
   id: string;
@@ -42,22 +42,20 @@ interface Category {
 export function AdvancedSearch() {
   const router = useRouter();
   const { t } = useI18n();
-  const [searchTerm, setSearchTerm] = useQueryState('q', parseAsString);
-  const [category, setCategory] = useQueryState('category', parseAsString);
-  const [subcategory, setSubcategory] = useQueryState('subcategory', parseAsString);
-  const [distance, setDistance] = useQueryState('distance', parseAsInteger.withDefault(50));
+  const state = useSearchState();
+  const { value: searchTerm, set: setSearchTerm } = state.query;
+  const { value: category, set: setCategory } = state.category;
+  const { value: subcategory, set: setSubcategory } = state.subcategory;
+  const { value: distance, set: setDistance } = state.distance;
 
-  // Mock categories - replace with API call in a production environment.
+  // Values match the persisted listing categories.
   const categories: Category[] = [
     {
-      id: '1',
-      name: 'Electronics',
-      subcategories: [
-        { id: '1-1', name: 'Phones' },
-        { id: '1-2', name: 'Computers' },
-      ]
+      id: 'Items',
+      name: 'Items',
+      subcategories: ['Buy', 'Sell', 'Free'].map(name => ({ id: name, name }))
     },
-    // ... other categories can be added here
+    { id: 'Services', name: 'Services', subcategories: ['I want', 'I will', 'I can'].map(name => ({ id: name, name })) },
   ];
 
   const selectedCategory = categories.find(c => c.id === (category || ''));
@@ -66,7 +64,9 @@ export function AdvancedSearch() {
     // Navigate to search page if we're not on it already
     // Parameters will be automatically reflected in URL due to nuqs
     if (!window.location.pathname.includes('/search')) {
-      router.push('/search');
+      const parameters = new URLSearchParams({ q: searchTerm, category, subcategory, distance: String(distance), tags: state.tags.value.filter(Boolean).join(',') });
+      if (state.coordinates.value) parameters.set('coordinates', state.coordinates.value);
+      router.push(`/search?${parameters}`);
     }
   };
 

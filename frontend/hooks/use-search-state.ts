@@ -1,86 +1,46 @@
 'use client';
 
-import { useCallback } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
-import { useQueryState, parseAsString, parseAsInteger, parseAsArrayOf } from 'nuqs';
+import { useQueryStates, parseAsString, parseAsInteger } from 'nuqs';
 
-/**
- * A custom hook that uses nuqs to manage search state via URL query parameters.
- * This approach has several benefits:
- * - The URL reflects the current search state (shareable URLs)
- * - Back/forward navigation works with search state
- * - Less client-side state management needed
- * - Better performance with fewer rerenders
- * 
- * @returns An object containing search state and methods to update it
- */
+let searchResetGeneration = 0;
+
+/** Capture before an async search action; a reset in any control invalidates it. */
+export function getSearchResetGeneration(): number {
+  return searchResetGeneration;
+}
+
+const searchParsers = {
+  q: parseAsString.withDefault(''),
+  category: parseAsString.withDefault(''),
+  subcategory: parseAsString.withDefault(''),
+  tags: parseAsString.withDefault(''),
+  page: parseAsInteger.withDefault(1),
+  distance: parseAsInteger.withDefault(50),
+  coordinates: parseAsString.withDefault(''),
+};
+
+/** Share one URL-backed search state across the header, filters and results. */
 export function useSearchState() {
-  const router = useRouter();
-  const pathname = usePathname();
-  
-  // Use nuqs to manage URL query parameters
-  const [query, setQueryRaw] = useQueryState('q', parseAsString);
-  const [category, setCategoryRaw] = useQueryState('category', parseAsString);
-  const [subcategory, setSubcategoryRaw] = useQueryState('subcategory', parseAsString);
-  const [tagsString, setTagsStringRaw] = useQueryState('tags', parseAsString);
-  const [page, setPageRaw] = useQueryState('page', parseAsInteger.withDefault(1));
-  const [distance, setDistanceRaw] = useQueryState('distance', parseAsInteger.withDefault(50));
-  const [coordinates, setCoordinatesRaw] = useQueryState('coordinates', parseAsString);
-
-  // Parse tags from comma-separated string to array
-  const tags = {
-    value: tagsString ? tagsString.split(',').map(tag => tag.trim()) : [],
-    set: (newTags: string[]) => setTagsStringRaw(newTags.length > 0 ? newTags.join(',') : null)
-  };
-
-  // Wrapped setters for better type safety and convenience
-  const setQuery = useCallback((value: string | null) => {
-    setQueryRaw(value || null);
-  }, [setQueryRaw]);
-  
-  const setCategory = useCallback((value: string | null) => {
-    setCategoryRaw(value || null);
-    // When category changes, reset subcategory
-    if (!value) {
-      setSubcategoryRaw(null);
-    }
-  }, [setCategoryRaw, setSubcategoryRaw]);
-  
-  const setSubcategory = useCallback((value: string | null) => {
-    setSubcategoryRaw(value || null);
-  }, [setSubcategoryRaw]);
-  
-  const setPage = useCallback((value: number) => {
-    setPageRaw(value);
-  }, [setPageRaw]);
-  
-  const setDistance = useCallback((value: number) => {
-    setDistanceRaw(value);
-  }, [setDistanceRaw]);
-  
-  const setCoordinates = useCallback((value: string | null) => {
-    setCoordinatesRaw(value || null);
-  }, [setCoordinatesRaw]);
-
-  // Reset all search parameters
-  const reset = useCallback(() => {
-    setQueryRaw(null);
-    setCategoryRaw(null);
-    setSubcategoryRaw(null);
-    setTagsStringRaw(null);
-    setPageRaw(1, { shallow: true });
-    setDistanceRaw(50, { shallow: true });
-    setCoordinatesRaw(null);
-  }, [setQueryRaw, setCategoryRaw, setSubcategoryRaw, setTagsStringRaw, setPageRaw, setDistanceRaw, setCoordinatesRaw]);
+  const [state, setState] = useQueryStates(searchParsers, { shallow: true });
 
   return {
-    query: { value: query || '', set: setQuery },
-    category: { value: category || '', set: setCategory },
-    subcategory: { value: subcategory || '', set: setSubcategory },
-    tags,
-    page: { value: page, set: setPage },
-    distance: { value: distance, set: setDistance },
-    coordinates: { value: coordinates || '', set: setCoordinates },
-    reset
+    query: { value: state.q, set: (value: string | null) => setState({ q: value || null, page: null }) },
+    category: { value: state.category, set: (value: string | null) => setState({ category: value || null, subcategory: null, page: null }) },
+    subcategory: { value: state.subcategory, set: (value: string | null) => setState({ subcategory: value || null, page: null }) },
+    tags: {
+      // Keep the editor's text intact; consumers still receive trimmed tag values.
+      raw: state.tags,
+      value: state.tags ? state.tags.split(',').map(tag => tag.trim()) : [],
+      setRaw: (value: string) => setState({ tags: value || null, page: null }),
+      set: (value: string[]) => setState({ tags: value.length ? value.join(',') : null, page: null }),
+    },
+    page: { value: Math.max(1, state.page), set: (value: number) => setState({ page: Math.max(1, value) }) },
+    distance: { value: state.distance, set: (value: number) => setState({ distance: value, page: null }) },
+    coordinates: { value: state.coordinates, set: (value: string | null) => setState({ coordinates: value || null, page: null }) },
+    reset: () => {
+      // Invalidate pending work before the asynchronous URL update begins.
+      searchResetGeneration += 1;
+      return setState(null);
+    },
   };
-} 
+}

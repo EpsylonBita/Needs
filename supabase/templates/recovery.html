@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="el">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Επαναφορά κωδικού — NEEDS</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#f4f7fb;color:#172033;font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" style="width:100%;border-collapse:collapse;">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" style="width:100%;max-width:560px;border-collapse:collapse;background-color:#ffffff;">
+            <tr>
+              <td style="padding:32px;">
+                <p style="margin:0 0 24px;font-size:24px;font-weight:bold;color:#2563eb;">NEEDS</p>
+                <h1 style="margin:0 0 16px;font-size:24px;line-height:1.3;">Όρισε νέο κωδικό πρόσβασης</h1>
+                <p style="margin:0 0 24px;font-size:16px;line-height:1.6;">Λάβαμε αίτημα επαναφοράς του κωδικού πρόσβασης για τον λογαριασμό σου στο NEEDS. Άνοιξε τον παρακάτω σύνδεσμο για να ορίσεις νέο κωδικό:</p>
+                <p style="margin:0 0 24px;">
+                  <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:14px 20px;border-radius:8px;background-color:#2563eb;color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;">Επαναφορά κωδικού</a>
+                </p>
+                <p style="margin:0 0 8px;font-size:14px;line-height:1.6;">Αν το κουμπί δεν λειτουργεί, άνοιξε αυτόν τον σύνδεσμο:</p>
+                <p style="margin:0 0 24px;font-size:13px;line-height:1.6;word-break:break-all;"><a href="{{ .ConfirmationURL }}" style="color:#2563eb;">{{ .ConfirmationURL }}</a></p>
+                <p style="margin:0;font-size:14px;line-height:1.6;color:#526078;">Αν δεν ζήτησες επαναφορά κωδικού, αγνόησε αυτό το μήνυμα.</p>
+                <p style="margin:24px 0 0;font-size:13px;color:#526078;">NEEDS · getneeds.app</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import React from 'react'
 import { CategoryTagsPicker } from '@/components/features/ads/category-tags-picker'
 
-test('renders category and subcategory select', () => {
+test('renders labeled category and listing type selects with suggested tags', () => {
   render(
     <CategoryTagsPicker
       selectedCategory={'Items'}
@@ -15,7 +15,8 @@ test('renders category and subcategory select', () => {
       onToggleTag={() => {}}
     />
   )
-  expect(screen.getAllByText(/Category/i).length).toBeGreaterThan(0)
-  expect(screen.getAllByText(/Subcategory/i).length).toBeGreaterThan(0)
+  expect(screen.getByRole('combobox', { name: 'Category' })).toHaveValue('Items')
+  expect(screen.getByRole('combobox', { name: 'Listing type' })).toHaveValue('')
+  expect(screen.getByRole('region', { name: 'Smart tags' })).toBeInTheDocument()
   expect(screen.getByText('phone')).toBeInTheDocument()
 })

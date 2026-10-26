@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { useTheme } from 'next-themes';
 
 interface MapOptions {
   center: [number, number];
@@ -11,17 +12,34 @@ interface MapOptions {
 export function useMap() {
   const [map, setMap] = useState<mapboxgl.Map | null>(null);
   const [marker, setMarker] = useState<mapboxgl.Marker | null>(null);
+  const instance = useRef<mapboxgl.Map | null>(null);
+  useEffect(() => () => { instance.current?.remove(); instance.current = null; }, []);
+  const { resolvedTheme } = useTheme();
+  const style = resolvedTheme === 'dark' ? 'mapbox://styles/mapbox/dark-v11' : 'mapbox://styles/mapbox/streets-v12';
+  const latestStyle = useRef(style);
+  const appliedStyle = useRef(style);
+  useLayoutEffect(() => { latestStyle.current = style; }, [style]);
+
+  useEffect(() => {
+    if (map && appliedStyle.current !== style) {
+      // Style changes retain the viewport and the DOM marker's selected location.
+      map.setStyle(style);
+      appliedStyle.current = style;
+    }
+  }, [map, style]);
 
   const initializeMap = useCallback((containerId: string, options: MapOptions) => {
-    if (map) return; // Map already initialized
+    if (instance.current) return; // Also guard calls before the next render.
 
     const newMap = new mapboxgl.Map({
       container: containerId,
-      style: 'mapbox://styles/mapbox/streets-v12',
+      style: latestStyle.current,
       center: options.center,
       zoom: options.zoom,
       accessToken: process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
     });
+    instance.current = newMap;
+    appliedStyle.current = latestStyle.current;
 
     // Add navigation controls
     newMap.addControl(new mapboxgl.NavigationControl(), 'top-right');
@@ -53,11 +71,13 @@ export function useMap() {
     setMarker(newMarker);
 
     return () => {
+      if (instance.current !== newMap) return;
       newMap.remove();
+      instance.current = null;
       setMap(null);
       setMarker(null);
     };
-  }, [map]);
+  }, []);
 
   const updateMarker = useCallback((coordinates: [number, number]) => {
     if (!map || !marker) return;
@@ -71,4 +91,4 @@ export function useMap() {
     initializeMap,
     updateMarker,
   };
-} 
+}

@@ -50,14 +50,14 @@ export default function AdminDisputesPage() {
     <div className="container mx-auto p-4">
       <h1 className="text-2xl font-bold">Disputes</h1>
       <div className="mt-2 flex items-center gap-2">
-        <select value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value as any)} className="border rounded-md p-2">
+        <select value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value as any)} className="border border-input bg-background text-foreground rounded-md p-2">
           <option value="all">All</option>
           <option value="open">Open</option>
           <option value="resolved">Resolved</option>
           <option value="refunded">Refunded</option>
           <option value="rejected">Rejected</option>
         </select>
-        <a href={`/api/admin/disputes/export?status=${statusFilter}`} className="px-3 py-1 rounded-md bg-gray-100">Export CSV</a>
+        <a href={`/api/admin/disputes/export?status=${statusFilter}`} className="px-3 py-1 rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80">Export CSV</a>
       </div>
       <div className="mt-4 border rounded-md">
         <table className="w-full text-sm">
@@ -80,9 +80,9 @@ export default function AdminDisputesPage() {
           </tbody>
         </table>
         <div className="p-2 flex items-center gap-2">
-          <button disabled={page===0} onClick={()=>setPage(p=>Math.max(0,p-1))} className="px-3 py-1 rounded-md bg-gray-200">Prev</button>
+          <button disabled={page===0} onClick={()=>setPage(p=>Math.max(0,p-1))} className="px-3 py-1 rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80">Prev</button>
           <span className="text-sm">Page {page+1} / {Math.max(1, Math.ceil(total/20))}</span>
-          <button disabled={(page+1)>=Math.ceil(total/20)} onClick={()=>setPage(p=>p+1)} className="px-3 py-1 rounded-md bg-gray-200">Next</button>
+          <button disabled={(page+1)>=Math.ceil(total/20)} onClick={()=>setPage(p=>p+1)} className="px-3 py-1 rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80">Next</button>
         </div>
       </div>
     </div>

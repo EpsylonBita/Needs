@@ -1,11 +1,11 @@
 /* @jsxImportSource react */
-/* eslint-disable react/react-in-jsx-scope */
+
+import { ClientSearchPage } from '@/components/features/search/client-search-page';
 
 export default function ItemsPage() {
   return (
-    <div className="container mx-auto p-4 pt-[72px]">
-      <h1 className="text-2xl font-bold">Items</h1>
-      <p>This is the Items page.</p>
+    <div className="needs-shell needs-search-page">
+      <ClientSearchPage category="Items" />
     </div>
   );
-} 
+}

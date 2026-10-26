@@ -1,22 +1,23 @@
 import { Suspense } from 'react';
-import { getCategoryBySlug } from '@/lib/api/api';
-import { SubcategoryList } from '../../../components/categories/subcategory-list';
-import { LoadingSubcategories } from './loading';
 import { notFound } from 'next/navigation';
+import { getCategoryBySlug } from '@/lib/api/api';
+import { LoadingSubcategories } from './loading';
+import { SubcategoryList } from '../../../components/categories/subcategory-list';
 
 export const revalidate = 3600; // Revalidate every hour
 
 type Props = {
-  params: { slug: string }
+  params: Promise<{ slug: string }>
 }
 
 export default async function CategoryPage({ params }: Props) {
-  if (!params.slug) {
+  const { slug } = await params;
+  if (!slug) {
     notFound();
   }
 
   try {
-    const category = await getCategoryBySlug(params.slug);
+    const category = await getCategoryBySlug(slug);
 
     return (
       <div className="container mx-auto px-4 py-8">
@@ -32,4 +33,4 @@ export default async function CategoryPage({ params }: Props) {
   } catch (error) {
     notFound();
   }
-} 
+}

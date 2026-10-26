@@ -18,13 +18,12 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "types": [
       "react",
       "react-dom",
       "node",
-      "vitest/globals",
-      "@testing-library/jest-dom"
+      "vitest/globals"
     ],
     "plugins": [
       {
@@ -32,27 +31,51 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"],
-      "@/components/*": ["./components/*"],
-      "@/lib/*": ["./lib/*"],
-      "@/lib/api/*": ["./lib/api/*"],
-      "@/lib/services/*": ["./lib/services/*"],
-      "@/lib/utils/*": ["./lib/utils/*"],
-      "@/lib/validations/*": ["./lib/validations/*"],
-      "@/types/*": ["./types/*"],
-      "@/contexts/*": ["./contexts/*"],
-      "@/hooks/*": ["./hooks/*"],
-      "@/app/*": ["./app/*"],
-      "@/public/*": ["./public/*"]
+      "@/*": [
+        "./*"
+      ],
+      "@/components/*": [
+        "./components/*"
+      ],
+      "@/lib/*": [
+        "./lib/*"
+      ],
+      "@/lib/api/*": [
+        "./lib/api/*"
+      ],
+      "@/lib/services/*": [
+        "./lib/services/*"
+      ],
+      "@/lib/utils/*": [
+        "./lib/utils/*"
+      ],
+      "@/lib/validations/*": [
+        "./lib/validations/*"
+      ],
+      "@/types/*": [
+        "./types/*"
+      ],
+      "@/contexts/*": [
+        "./contexts/*"
+      ],
+      "@/hooks/*": [
+        "./hooks/*"
+      ],
+      "@/app/*": [
+        "./app/*"
+      ],
+      "@/public/*": [
+        "./public/*"
+      ]
     },
-    "baseUrl": ".",
     "jsxImportSource": "react"
   },
   "include": [
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next/types/**/*.ts"
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

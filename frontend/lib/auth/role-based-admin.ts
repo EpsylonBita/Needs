@@ -49,7 +49,7 @@ async function getUserRole(userId: string, email?: string): Promise<UserRoleType
   }
 
   // Check for role in user metadata
-  const userRole = userData.user.user_metadata?.role as UserRoleType
+  const userRole = userData.user.app_metadata?.role as UserRoleType
   if (userRole && Object.values(UserRole).includes(userRole)) {
     return userRole
   }
@@ -177,7 +177,7 @@ export async function updateUserRole(userId: string, newRole: UserRoleType, upda
   }
 
   const { data, error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-    user_metadata: { role: newRole }
+    app_metadata: { role: newRole }
   })
 
   if (error) {
@@ -212,7 +212,7 @@ export async function getUsersWithRoles(requesterId: string) {
   return data.users.map((user) => ({
     id: user.id,
     email: user.email || undefined,
-    role: (user.user_metadata?.role as UserRoleType) || UserRole.USER,
+    role: (user.app_metadata?.role as UserRoleType) || UserRole.USER,
     createdAt: user.created_at,
     lastSignInAt: user.last_sign_in_at || undefined
   }))

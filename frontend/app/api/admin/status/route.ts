@@ -10,7 +10,7 @@ export const GET = withApiErrorHandler(async (request: NextRequest) => {
     // Authenticate admin user
     const auth = await requireAdmin(request)
     if (!auth.allowed) {
-      throw ErrorFactory.authorization('forbidden')
+      throw ErrorFactory.authorization('forbidden', { userMessage: 'forbidden' })
     }
 
     // Check environment configuration (server-side only)
@@ -30,7 +30,7 @@ export const GET = withApiErrorHandler(async (request: NextRequest) => {
 
     if (error) {
       console.error('Error fetching webhook events:', error)
-      throw ErrorFactory.system('Failed to fetch webhook events')
+      throw ErrorFactory.system('Failed to fetch webhook events', { userMessage: 'Failed to fetch webhook events' })
     }
 
     return NextResponse.json({

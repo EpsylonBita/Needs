@@ -1,116 +1,107 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import Link from 'next/link';
 
-import { useI18n } from '@/contexts/i18n-context'
-import { useGeolocation } from '@/hooks/useGeolocation'
-import { supabase } from '@/lib/supabase/client'
+import { ArrowLeft, ArrowRight, MapPin, Package, Search, TriangleAlert } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useI18n } from '@/contexts/i18n-context';
+import { useSearchState } from '@/hooks/use-search-state';
+
+import { SearchMap } from './search-map';
+import { useListingSearch, type SearchListing } from './use-listing-search';
 
 interface SearchResultsProps {
   query?: string;
   radiusMeters?: number;
+  fixedCategory?: 'Items' | 'Services';
 }
 
-type ListingCard = {
-  id: string
-  title: string
-  description: string
-  price: number
-  main_category: string
-  sub_category: string
-}
+const EMPTY_LISTINGS: SearchListing[] = [];
+const subcategories: Record<string, string[]> = {
+  Items: ['Buy', 'Sell', 'Free'],
+  Services: ['I want', 'I will', 'I can'],
+};
 
-export function SearchResults({ query, radiusMeters = 5000 }: SearchResultsProps) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [results, setResults] = useState<ListingCard[]>([]);
-  const { location } = useGeolocation();
+function ListingCard({ listing }: { listing: SearchListing }) {
   const { t, formatCurrency } = useI18n();
-
-  useEffect(() => {
-    const run = async () => {
-      setIsLoading(true);
-      try {
-        if (location) {
-          const { data, error } = await supabase.rpc('nearby_listings', {
-            lon: location.lng,
-            lat: location.lat,
-            radius_m: radiusMeters,
-          });
-          if (error) throw error;
-          const rows = (data || []) as Array<{ id: string; title: string; description: string; price: number; main_category: string; sub_category: string }>
-          const filtered = query
-            ? rows.filter((l) =>
-                (l.title || '').toLowerCase().includes(query.toLowerCase()) ||
-                (l.description || '').toLowerCase().includes(query.toLowerCase())
-              )
-            : rows;
-          setResults(filtered.map((l) => ({
-            id: l.id,
-            title: l.title,
-            description: l.description,
-            price: l.price,
-            main_category: l.main_category,
-            sub_category: l.sub_category,
-          })));
-        } else if (query) {
-          const { data, error } = await supabase
-            .from('listings')
-            .select('id,title,description,price,main_category,sub_category')
-            .ilike('title', `%${query}%`)
-            .limit(50);
-          if (error) throw error;
-          setResults((data || []) as ListingCard[]);
-        } else {
-          setResults([]);
-        }
-      } catch (_e) {
-        setResults([]);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    run();
-  }, [query, location, location?.lat, location?.lng, radiusMeters]);
-
-  if (isLoading) {
-    return (
-      <div className="text-center text-muted-foreground">
-        {t('search.searching','Searching...')}
-      </div>
-    );
-  }
-
-  if (!query && results.length === 0) {
-    return (
-      <div className="text-center text-muted-foreground">
-        {t('search.enterSearchOrEnableLocation','Enter a search term or enable location to find nearby items and services')}
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      {query && (
-        <h2 className="text-2xl font-semibold mb-4">
-          {t('search.resultsFor','Search results for:')} {query}
-        </h2>
-      )}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {results.map((r) => (
-          <div key={r.id} className="p-4 rounded-md ring-1 ring-gray-200 dark:ring-gray-800">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold">{r.title}</h3>
-              {typeof r.price === 'number' && (
-                <span className="text-blue-600">{formatCurrency(r.price)}</span>
-              )}
-            </div>
-            <p className="text-sm text-gray-500 mt-2 line-clamp-3">{r.description}</p>
-            <div className="mt-2 text-xs text-gray-400">
-              {r.main_category} • {r.sub_category}
-            </div>
-          </div>
-        ))}
+  const [failedImage, setFailedImage] = useState<string | null>(null);
+  const imageUrl = listing.listing_images?.find(image => image.main)?.url || listing.listing_images?.[0]?.url;
+  const safeImage = imageUrl && (/^https?:\/\//i.test(imageUrl) || (imageUrl.startsWith('/') && !imageUrl.startsWith('//'))) && imageUrl !== failedImage ? imageUrl : null;
+  const address = typeof listing.address === 'string' ? listing.address : listing.address?.label;
+  const categories: Record<string, string> = {
+    Items: t('searchModern.items', 'Items'), Services: t('searchModern.services', 'Services'),
+    Sell: t('searchModern.sell', 'Sell'), Buy: t('searchModern.buy', 'Buy'), Free: t('searchModern.free', 'Free'),
+    'I want': t('searchModern.want', 'I want'), 'I will': t('searchModern.will', 'I will'), 'I can': t('searchModern.can', 'I can'),
+  };
+  return <Link href={`/listings/${encodeURIComponent(listing.id)}`} className="needs-search-result-card group min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+    <div className="needs-search-result-media flex items-center justify-center">
+      {safeImage
+        // Stored listing images are served directly from their public storage URL.
+        // eslint-disable-next-line @next/next/no-img-element
+        ? <img src={safeImage} alt="" loading="lazy" decoding="async" onError={() => setFailedImage(safeImage)} className="absolute inset-0 h-full w-full object-cover" />
+        : <div className="flex flex-col items-center gap-2 px-2 text-center text-muted-foreground"><Package className="h-7 w-7 stroke-[1.25]" aria-hidden="true" /><span className="text-xs">{t('searchModern.noPhoto', 'No photo added')}</span></div>}
+    </div>
+    <div className="needs-search-result-body">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><span>{categories[listing.main_category] || listing.main_category}</span><span className="rounded-full bg-muted px-2 py-1">{categories[listing.sub_category] || listing.sub_category}</span></div>
+      <h3 className="line-clamp-2 break-words text-base font-semibold leading-snug group-hover:text-primary">{listing.title}</h3>
+      <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">{listing.description}</p>
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
+        {address && <span className="inline-flex min-w-0 max-w-full items-center gap-1 text-xs text-muted-foreground"><MapPin className="h-3 w-3 shrink-0" aria-hidden="true" /><span className="truncate">{address}</span></span>}
+        {typeof listing.price === 'number' && <span className="ml-auto shrink-0 text-base font-semibold text-primary">{listing.price === 0 ? t('searchModern.free', 'Free') : formatCurrency(listing.price, 'EUR')}</span>}
       </div>
     </div>
-  );
+  </Link>;
+}
+
+export function SearchResults({ query, radiusMeters, fixedCategory }: SearchResultsProps) {
+  const state = useSearchState();
+  const { t, locale } = useI18n();
+  const searchQuery = query ?? state.query.value;
+  const category = fixedCategory || state.category.value;
+  const allowedSubcategories = category ? subcategories[category] || [] : Object.values(subcategories).flat();
+  const subcategory = allowedSubcategories.includes(state.subcategory.value) ? state.subcategory.value : '';
+  const coordinates = state.coordinates.value;
+  const parameters = new URLSearchParams({
+    q: searchQuery, category, subcategory, tags: state.tags.value.filter(Boolean).join(','),
+    distance: String(radiusMeters ? Math.max(1, Math.round(radiusMeters / 1000)) : state.distance.value),
+    page: String(state.page.value),
+  });
+  if (coordinates) parameters.set('coordinates', coordinates);
+  const { data, isLoading, error, retry } = useListingSearch(parameters.toString());
+  // The list and map always share one response. Do not leave old pins visible while filters change.
+  const results = !isLoading && !error ? data?.listings || EMPTY_LISTINGS : EMPTY_LISTINGS;
+
+  return <div className="needs-search-workspace">
+    <section aria-label={t('searchModern.resultsLabel', 'Search results')} className="needs-search-list min-w-0 space-y-5" aria-busy={isLoading}>
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <h2 className="text-lg font-semibold">{searchQuery ? <>{t('searchModern.resultsFor', 'Results for')} <span className="break-words text-primary">“{searchQuery}”</span></> : t('searchModern.browse', 'Explore the listings')}</h2>
+        {!isLoading && !error && <p className="text-sm text-muted-foreground" aria-live="polite">{data?.pagination.total === 1 ? t('searchModern.oneResult', '1 listing') : t('searchModern.resultCount', '{count} listings').replace('{count}', String(data?.pagination.total ?? 0))}</p>}
+      </div>
+      {!coordinates && <p className="flex gap-2 text-sm leading-relaxed text-muted-foreground"><MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />{t('searchModern.allLocations', 'Showing all locations. Choose “Use my location” in filters to search nearby.')}</p>}
+
+      {isLoading ? <div><p role="status" className="mb-4 text-sm text-muted-foreground">{t('search.searching', 'Searching...')}</p><div className="space-y-3" aria-hidden="true">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-40 rounded-2xl" />)}</div></div>
+        : error ? <div role="alert" className="rounded-2xl border border-border bg-card px-5 py-10 text-center">
+          <TriangleAlert className="mx-auto mb-4 h-8 w-8 text-primary" aria-hidden="true" /><h3 className="text-xl font-semibold">{t('searchModern.errorTitle', 'We could not load the listings')}</h3>
+          <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">{locale === 'el' ? t('searchModern.errorDescription', 'We could not load listings. Try again or clear your search filters.') : error}</p>
+          <div className="mt-6 flex flex-wrap justify-center gap-3"><Button onClick={retry} className="h-12 rounded-xl">{t('common.retry', 'Try again')}</Button><Button variant="outline" onClick={() => state.reset()} className="h-12 rounded-xl">{t('searchModern.reset', 'Reset filters')}</Button></div>
+        </div>
+        : results.length === 0 ? <div className="needs-search-empty">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/5 text-primary"><Search className="h-6 w-6" aria-hidden="true" /></div>
+          <h3 className="text-xl font-semibold">{t('searchModern.emptyTitle', 'A fresh search could help.')}</h3>
+          <p role="status" className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-muted-foreground">{t('searchModern.emptyDescription', 'No listings match your search. Try fewer keywords, remove a tag or widen the distance.')}</p>
+          <Button variant="outline" className="mt-6 h-12 rounded-xl" onClick={() => state.reset()}>{t('searchModern.clearFilters', 'Clear search and filters')}</Button>
+        </div>
+        : <div className="space-y-3">{results.map(listing => <ListingCard key={listing.id} listing={listing} />)}</div>}
+
+      {!isLoading && !error && data && (data.pagination.totalPages > 1 || state.page.value > 1) && <nav aria-label={t('searchModern.pagination', 'Search result pages')} className="needs-search-pagination">
+        <Button variant="outline" className="h-11 rounded-xl" disabled={state.page.value <= 1} onClick={() => state.page.set(Math.min(state.page.value - 1, data.pagination.totalPages || 1))}><ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />{t('common.previous', 'Previous')}</Button>
+        <span className="px-2 text-sm text-muted-foreground">{t('searchModern.pageCount', 'Page {page} of {pages}').replace('{page}', String(state.page.value)).replace('{pages}', String(Math.max(1, data.pagination.totalPages)))}</span>
+        <Button variant="outline" className="h-11 rounded-xl" disabled={state.page.value >= data.pagination.totalPages} onClick={() => state.page.set(state.page.value + 1)}>{t('common.next', 'Next')}<ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" /></Button>
+      </nav>}
+    </section>
+    <SearchMap listings={results} isLoading={isLoading} />
+  </div>;
 }

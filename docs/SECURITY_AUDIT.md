@@ -1,3 +1,5 @@
+> Historical report. Several statements below were superseded by subsequent repairs. Do not treat this document as the current vulnerability inventory. See [26 October 2026 repairs](AUDIT_REPAIRS_2026-10-26.md) and the dated rollout records before acting.
+
 # Security Audit (2025-11-18)
 
 ## Overview

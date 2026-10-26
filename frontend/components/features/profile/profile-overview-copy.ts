@@ -1,0 +1,28 @@
+export const profileOverviewCopy = {
+  en: {
+    dashboard: 'Dashboard', listings: 'Listings', reviews: 'Reviews', saved: 'Saved', settings: 'Settings',
+    loading: 'Loading your activity…', error: 'Your activity could not be loaded. Please try again.', retry: 'Try again', signIn: 'Sign in to view your activity.',
+    activeListings: 'Active listings', conversations: 'Conversations', receivedReviews: 'Received reviews', unreadNotifications: 'Unread notifications',
+    activeHint: 'Visible in search', chatsHint: 'Your conversations', reviewsHint: 'Reviews received from other members', notificationsHint: 'Waiting to be read',
+    overview: 'Your activity', overviewHint: 'Manage your listings, conversations and transactions.',
+    manageListings: 'Manage listings', openChats: 'Open conversations', orders: 'Orders', payments: 'Payments', milestones: 'Milestones', notifications: 'Notifications',
+    recentListings: 'Recent listings', listingsHint: 'Your five most recent listings. Open management to see all of them.', noListings: 'You have not created any listings yet.',
+    recentReviews: 'Recent reviews', reviewsDescription: 'Your five most recent received reviews.', noReviews: 'You have not received any reviews yet.',
+    active: 'Active', sold: 'Completed', paused: 'Paused', held: 'Under moderation',
+    noComment: 'No written comment', savedUnavailable: 'Saving listings is not available yet.',
+    settingsHint: 'Use Edit Profile at the top of this page to update your name, photo and contact details.',
+  },
+  el: {
+    dashboard: 'Πίνακας ελέγχου', listings: 'Αγγελίες', reviews: 'Αξιολογήσεις', saved: 'Αποθηκευμένα', settings: 'Ρυθμίσεις',
+    loading: 'Φόρτωση της δραστηριότητάς σου…', error: 'Δεν ήταν δυνατή η φόρτωση της δραστηριότητάς σου. Δοκίμασε ξανά.', retry: 'Δοκίμασε ξανά', signIn: 'Συνδέσου για να δεις τη δραστηριότητά σου.',
+    activeListings: 'Ενεργές αγγελίες', conversations: 'Συνομιλίες', receivedReviews: 'Αξιολογήσεις που έλαβες', unreadNotifications: 'Μη αναγνωσμένες ειδοποιήσεις',
+    activeHint: 'Εμφανίζονται στην αναζήτηση', chatsHint: 'Οι συνομιλίες σου', reviewsHint: 'Αξιολογήσεις από άλλα μέλη', notificationsHint: 'Περιμένουν να τις διαβάσεις',
+    overview: 'Η δραστηριότητά σου', overviewHint: 'Διαχειρίσου τις αγγελίες, τις συνομιλίες και τις συναλλαγές σου.',
+    manageListings: 'Διαχείριση αγγελιών', openChats: 'Άνοιγμα συνομιλιών', orders: 'Συναλλαγές', payments: 'Πληρωμές', milestones: 'Στάδια εργασίας', notifications: 'Ειδοποιήσεις',
+    recentListings: 'Πρόσφατες αγγελίες', listingsHint: 'Οι πέντε πιο πρόσφατες αγγελίες σου. Άνοιξε τη διαχείριση για να τις δεις όλες.', noListings: 'Δεν έχεις δημιουργήσει αγγελίες ακόμη.',
+    recentReviews: 'Πρόσφατες αξιολογήσεις', reviewsDescription: 'Οι πέντε πιο πρόσφατες αξιολογήσεις που έλαβες.', noReviews: 'Δεν έχεις λάβει αξιολογήσεις ακόμη.',
+    active: 'Ενεργή', sold: 'Ολοκληρωμένη', paused: 'Σε παύση', held: 'Σε έλεγχο',
+    noComment: 'Χωρίς γραπτό σχόλιο', savedUnavailable: 'Η αποθήκευση αγγελιών δεν είναι διαθέσιμη ακόμη.',
+    settingsHint: 'Χρησιμοποίησε την Επεξεργασία προφίλ στην κορυφή της σελίδας για να αλλάξεις όνομα, φωτογραφία και στοιχεία επικοινωνίας.',
+  },
+}

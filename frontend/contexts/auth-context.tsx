@@ -1,9 +1,11 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { supabase } from '@/lib/supabase/client';
+import React, { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { ErrorBoundary } from '@/components/common/error-boundary';
 import { ErrorFallback } from '@/components/common/error-fallbacks';
+import { authEmailRedirectUrl } from '@/lib/auth/email-links';
+import { supabase } from '@/lib/supabase/client';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 
 interface User {
   id: string;
@@ -21,7 +23,7 @@ interface AuthContextState {
 
 interface AuthContextActions {
   login: (data: { email: string; password: string }) => Promise<void>;
-  register: (data: { email: string; password: string; fullName?: string; phoneNumber?: string }) => Promise<void>;
+  register: (data: { email: string; password: string; fullName?: string; phoneNumber?: string }) => Promise<{ requiresEmailConfirmation: boolean }>;
   logout: () => Promise<void>;
 }
 
@@ -42,97 +44,90 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const authVersion = useRef(0);
+
+  const sessionUser = (account: SupabaseUser): User => ({
+    id: account.id,
+    email: account.email || '',
+    fullName: account.user_metadata?.fullName || '',
+    phoneNumber: account.user_metadata?.phoneNumber || '',
+  });
 
   // Check storage and token availability on mount
   useEffect(() => {
-    const initialize = async () => {
-      try {
-        setIsLoading(true);
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (session?.user) {
-          await fetchUserData(session.user.id);
+    let active = true;
+    let profileTimer: ReturnType<typeof setTimeout> | undefined;
+    const applySession = (account: SupabaseUser | null) => {
+      const version = ++authVersion.current;
+      if (profileTimer) clearTimeout(profileTimer);
+      setUser(account ? sessionUser(account) : null);
+      setIsInitialized(true);
+      setIsLoading(false);
+      if (!account) return;
+      // Auth callbacks run under Supabase's session lock. Defer profile I/O
+      // until the callback returns, and never call getUser from this callback.
+      profileTimer = setTimeout(async () => {
+        try {
+          const { data, error: profileError } = await supabase.from('profiles')
+            .select('display_name').eq('user_id', account.id).limit(1);
+          if (active && version === authVersion.current && !profileError) {
+            setUser({ ...sessionUser(account), fullName: data?.[0]?.display_name || sessionUser(account).fullName });
+          }
+        } catch {
+          // A profile lookup failure must not erase a valid authenticated session.
         }
-        setIsInitialized(true);
+      }, 0);
+    };
+    const initialize = async () => {
+      const version = authVersion.current;
+      try {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        if (active && version === authVersion.current) applySession(session?.user ?? null);
       } catch (err) {
-        setError('Failed to initialize authentication');
-        setIsInitialized(true);
-      } finally {
-        setIsLoading(false);
+        if (active && version === authVersion.current) {
+          setError('Failed to initialize authentication');
+          applySession(null);
+        }
       }
     };
     initialize();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event: string, sess: any) => {
-      if (sess?.user) {
-        await fetchUserData(sess.user.id);
-      } else {
-        setUser(null);
-      }
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (active) applySession(session?.user ?? null);
     });
     return () => {
+      active = false;
+      ++authVersion.current;
+      if (profileTimer) clearTimeout(profileTimer);
       authListener.subscription.unsubscribe();
     };
   }, []);
 
-  // Function to fetch user data using the stored token
-  const fetchUserData = async (userId: string) => {
-    try {
-      const { data: profileRows } = await supabase
-        .from('profiles')
-        .select('user_id,display_name,avatar_url')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: true })
-        .limit(1);
-
-      const { data: userData } = await supabase.auth.getUser();
-      const email = userData.user?.email || '';
-
-      const profile = (profileRows || [])[0];
-      const fullName = profile?.display_name || userData.user?.user_metadata?.fullName || '';
-      const phoneNumber = userData.user?.user_metadata?.phoneNumber || '';
-
-      setUser({ id: userId, email, fullName, phoneNumber });
-    } catch (err) {
-      setUser(null);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Supabase login/signup/logout
-  const handleAuthResponse = async () => {
-    const { data } = await supabase.auth.getUser();
-    if (data.user) {
-      await fetchUserData(data.user.id);
-    }
-  };
-
   const login = async (data: { email: string; password: string }) => {
     setIsLoading(true);
     setError(null);
-    const { data: res, error: signInError } = await supabase.auth.signInWithPassword({
-      email: data.email,
-      password: data.password,
-    });
-    if (signInError) {
+    try {
+      const { data: res, error: signInError } = await supabase.auth.signInWithPassword(data);
+      if (signInError) throw signInError;
+      if (res.user) setUser(sessionUser(res.user));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign in failed');
+      throw err;
+    } finally {
       setIsLoading(false);
-      setError(signInError.message);
-      throw signInError;
     }
-    // Let the auth state listener fetch and set user; return immediately to avoid UI stalls
-    setIsLoading(false);
   };
 
   const register = async (data: { email: string; password: string; fullName?: string; phoneNumber?: string }) => {
     try {
       setIsLoading(true);
       setError(null);
-      const { error: signUpError } = await supabase.auth.signUp({
+      const { data: result, error: signUpError } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
         options: {
+          emailRedirectTo: authEmailRedirectUrl('/auth/confirm'),
           data: {
             fullName: data.fullName,
             phoneNumber: data.phoneNumber,
@@ -140,7 +135,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         },
       });
       if (signUpError) throw signUpError;
-      await handleAuthResponse();
+      if (result.session?.user) setUser(sessionUser(result.session.user));
+      return { requiresEmailConfirmation: !result.session };
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
       throw err;
@@ -152,11 +148,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const logout = async () => {
     try {
       setIsLoading(true);
-      await supabase.auth.signOut();
-    } catch (err) {
-      // noop
-    } finally {
+      const { error: signOutError } = await supabase.auth.signOut();
+      if (signOutError) throw signOutError;
+      ++authVersion.current;
       setUser(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sign out failed');
+      throw err;
+    } finally {
       setIsLoading(false);
     }
   };

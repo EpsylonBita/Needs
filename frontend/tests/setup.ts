@@ -23,12 +23,12 @@ global.ResizeObserver = RO as any
 
 // Polyfill Pointer Events methods missing in jsdom used by Radix UI
 // @ts-ignore
-if (!Element.prototype.hasPointerCapture) {
+if (typeof Element !== 'undefined' && !Element.prototype.hasPointerCapture) {
   // @ts-ignore
   Element.prototype.hasPointerCapture = () => false
 }
 // @ts-ignore
-if (!Element.prototype.setPointerCapture) {
+if (typeof Element !== 'undefined' && !Element.prototype.setPointerCapture) {
   // @ts-ignore
   Element.prototype.setPointerCapture = () => {}
 }

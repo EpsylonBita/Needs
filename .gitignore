@@ -2,3 +2,10 @@ node_modules
 
 frontend/.next/
 frontend/node_modules/
+supabase/.temp/
+
+.tools/
+**/*.tsbuildinfo
+frontend/playwright-report/
+frontend/test-results/
+frontend/.next-e2e/

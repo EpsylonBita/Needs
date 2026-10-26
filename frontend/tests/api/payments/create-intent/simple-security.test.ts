@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Mock the dependencies
 vi.mock('@/lib/stripe/server', () => ({
@@ -85,6 +85,4 @@ describe('Payment Security - Core Authentication', () => {
     expect(data.error).toBe('Invalid authentication')
   })
 })
-vi.mock('@/lib/utils/error-handler', () => ({
-  withApiErrorHandler: (handler: any) => handler
-}))
+// Exercise the real error boundary, including ErrorFactory and HTTP status mapping.

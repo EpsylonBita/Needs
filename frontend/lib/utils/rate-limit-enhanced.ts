@@ -1,4 +1,3 @@
-import { getSupabaseAdmin } from '@/lib/supabase/server'
 import { log } from '@/lib/utils/logger'
 
 export interface RateLimitConfig {
@@ -18,72 +17,39 @@ export interface RateLimitResult {
 }
 
 /**
- * Advanced rate limiting with sliding window and burst protection
+ * Database-backed fixed windows with burst protection.
  * Supports different rate limit strategies for different endpoint types
  */
 export class RateLimiter {
-  private supabase = getSupabaseAdmin()
-
   /**
-   * Standard rate limiting with sliding window
+   * The database owns time and atomically consumes one slot. No client-side
+   * read/modify/write fallback is safe if the RPC or its migration is unavailable.
    */
   async limit(config: RateLimitConfig): Promise<RateLimitResult> {
-    const now = Date.now()
-    const windowStart = new Date(Math.floor(now / config.windowMs) * config.windowMs)
-    const windowEnd = new Date(windowStart.getTime() + config.windowMs)
-
+    if (!config.key.trim() || config.key.length > 512 || !Number.isInteger(config.limit) || config.limit < 1
+      || config.limit > 2147483647 || !Number.isInteger(config.windowMs) || config.windowMs < 1 || config.windowMs > 2147483647) {
+      return { allowed: false, remaining: 0 }
+    }
     try {
-      // Get current count for this window
-      const { data } = await this.supabase
-        .from('rate_limits')
-        .select('count')
-        .eq('key', config.key)
-        .eq('window_start', windowStart.toISOString())
-        .limit(1)
-
-      const current = data?.[0]?.count || 0
-      const remaining = Math.max(0, config.limit - current)
-
-      if (current >= config.limit) {
-        // Rate limit exceeded
-        log('warn', 'rate_limit_exceeded', {
-          key: config.key,
-          limit: config.limit,
-          current,
-          windowStart: windowStart.toISOString()
-        })
-
-        return {
-          allowed: false,
-          remaining: 0,
-          resetAt: windowEnd,
-          retryAfter: Math.ceil((windowEnd.getTime() - now) / 1000)
-        }
+      const { getSupabaseAdmin } = await import('@/lib/supabase/server')
+      const { data, error } = await getSupabaseAdmin().rpc('consume_rate_limit', {
+        p_key: config.key, p_limit: config.limit, p_window_ms: config.windowMs,
+      })
+      if (error) throw new Error(error.message || 'Rate limit storage unavailable')
+      const resetAt = new Date(data?.reset_at)
+      if (!data || typeof data.allowed !== 'boolean' || !Number.isInteger(data.remaining)
+        || data.remaining < 0 || data.remaining >= config.limit || typeof data.reset_at !== 'string'
+        || !Number.isFinite(resetAt.getTime()) || !Number.isInteger(data.retry_after) || data.retry_after < 0
+        || (!data.allowed && (data.remaining !== 0 || data.retry_after < 1)) || (data.allowed && data.retry_after !== 0)) {
+        throw new Error('Invalid rate limit storage response')
       }
-
-      // Increment counter
-      if (current === 0) {
-        await this.supabase
-          .from('rate_limits')
-          .insert({ 
-            key: config.key, 
-            window_start: windowStart.toISOString(), 
-            count: 1 
-          })
-      } else {
-        await this.supabase
-          .from('rate_limits')
-          .update({ count: current + 1 })
-          .eq('key', config.key)
-          .eq('window_start', windowStart.toISOString())
-      }
-
+      if (!data.allowed) log('warn', 'rate_limit_exceeded', { key: config.key, limit: config.limit })
       return {
-        allowed: true,
-        remaining: remaining - 1,
-        resetAt: windowEnd
+        allowed: data.allowed,
+        remaining: data.remaining,
+        resetAt,
+        ...(!data.allowed ? { retryAfter: data.retry_after, message: config.message } : {}),
       }
-
     } catch (error) {
       log('error', 'rate_limit_error', {
         key: config.key,
@@ -91,14 +57,14 @@ export class RateLimiter {
       })
       
       if (config.failClosed) {
-        return { allowed: false, remaining: 0 }
+        return { allowed: false, remaining: 0, retryAfter: 60, message: config.message }
       }
       return { allowed: true, remaining: config.limit }
     }
   }
 
   /**
-   * Sliding window rate limit with burst protection
+   * A shorter burst window plus a longer sustained fixed window.
    * Allows bursts up to burstLimit within burstWindow, then enforces sustained limit
    */
   async limitWithBurst(config: {
@@ -108,18 +74,20 @@ export class RateLimiter {
     burstLimit: number
     burstWindowMs: number
     message?: string
+    failClosed?: boolean
   }): Promise<RateLimitResult> {
 
     // Check burst limit first (shorter window)
     const burstResult = await this.limit({
       key: `${config.key}:burst`,
       limit: config.burstLimit,
-      windowMs: config.burstWindowMs
+      windowMs: config.burstWindowMs,
+      failClosed: config.failClosed,
     })
 
     if (!burstResult.allowed) {
       return {
-        allowed: false,
+        ...burstResult,
         message: 'Too many requests. Please slow down.',
         retryAfter: burstResult.retryAfter
       }
@@ -129,12 +97,13 @@ export class RateLimiter {
     const sustainedResult = await this.limit({
       key: `${config.key}:sustained`,
       limit: config.sustainedLimit,
-      windowMs: config.sustainedWindowMs
+      windowMs: config.sustainedWindowMs,
+      failClosed: config.failClosed,
     })
 
     if (!sustainedResult.allowed) {
       return {
-        allowed: false,
+        ...sustainedResult,
         message: config.message || 'Rate limit exceeded. Please try again later.',
         retryAfter: sustainedResult.retryAfter
       }
@@ -144,7 +113,9 @@ export class RateLimiter {
     return {
       allowed: true,
       remaining: Math.min(burstResult.remaining!, sustainedResult.remaining!),
-      resetAt: burstResult.resetAt! < sustainedResult.resetAt! ? burstResult.resetAt! : sustainedResult.resetAt!
+      resetAt: burstResult.resetAt && sustainedResult.resetAt
+        ? (burstResult.resetAt < sustainedResult.resetAt ? burstResult.resetAt : sustainedResult.resetAt)
+        : burstResult.resetAt ?? sustainedResult.resetAt,
     }
   }
 
@@ -158,6 +129,7 @@ export class RateLimiter {
     windowMs: number
     isAuthenticated: boolean
     message?: string
+    failClosed?: boolean
   }): Promise<RateLimitResult> {
     const limit = config.isAuthenticated ? config.authenticatedLimit : config.anonymousLimit
     const key = config.isAuthenticated ? `${config.key}:auth` : `${config.key}:anon`
@@ -166,7 +138,8 @@ export class RateLimiter {
       key,
       limit,
       windowMs: config.windowMs,
-      message: config.message
+      message: config.message,
+      failClosed: config.failClosed,
     })
   }
 
@@ -177,7 +150,8 @@ export class RateLimiter {
     const cutoff = new Date(Date.now() - olderThanMs).toISOString()
     
     try {
-      const { error } = await this.supabase
+      const { getSupabaseAdmin } = await import('@/lib/supabase/server')
+      const { error } = await getSupabaseAdmin()
         .from('rate_limits')
         .delete()
         .lt('window_start', cutoff)
@@ -278,27 +252,29 @@ export async function rateLimitEnhanced(
   try {
     if (options?.burstLimit && options?.burstWindowMs) {
       // Use burst protection
-      return rateLimiter.limitWithBurst({
+      return await rateLimiter.limitWithBurst({
         key,
         sustainedLimit: limit,
         sustainedWindowMs: windowMs,
         burstLimit: options.burstLimit,
         burstWindowMs: options.burstWindowMs,
-        message: options.message
+        message: options.message,
+        failClosed: options.failClosed,
       })
     } else if (options?.isAuthenticated !== undefined) {
       // Use progressive limiting
-      return rateLimiter.limitProgressive({
+      return await rateLimiter.limitProgressive({
         key,
         anonymousLimit: limit,
         authenticatedLimit: options.isAuthenticated ? limit * 5 : limit,
         windowMs,
         isAuthenticated: options.isAuthenticated,
-        message: options.message
+        message: options.message,
+        failClosed: options.failClosed,
       })
     } else {
       // Standard rate limiting
-      return rateLimiter.limit({ key, limit, windowMs, message: options?.message, failClosed: options?.failClosed })
+      return await rateLimiter.limit({ key, limit, windowMs, message: options?.message, failClosed: options?.failClosed })
     }
   } catch (error) {
     log('error', 'rate_limit_enhanced_error', {
@@ -308,7 +284,7 @@ export async function rateLimitEnhanced(
       error: error instanceof Error ? error.message : 'Unknown error'
     })
     if (options?.failClosed) {
-      return { allowed: false, remaining: 0 }
+      return { allowed: false, remaining: 0, retryAfter: 60, message: options.message }
     }
     return { allowed: true, remaining: limit }
   }

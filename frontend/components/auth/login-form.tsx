@@ -1,182 +1,84 @@
-"use client";
+'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
+import Link from 'next/link';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2Icon } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, Loader2, LockKeyhole, Mail } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 
-import { Button } from "@/components/ui/button";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Input } from "@/components/ui/input";
-import { useToast } from "@/components/ui/use-toast";
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/auth-context';
 import { useI18n } from '@/contexts/i18n-context';
 import { loginSchema, type LoginInput } from '@/lib/validations/auth';
+import styles from './auth-dialog.module.css';
 
-/**
- * Login form props interface
- */
 export interface LoginFormProps {
-  /** Controls visibility of the login modal */
   isOpen: boolean;
-  /** Handler to close the login modal */
   onClose: () => void;
-  /** Optional handler to switch to registration form */
+  onAuthenticated?: () => void;
+  onBusyChange?: (busy: boolean) => void;
   onRegister?: () => void;
-  /** Optional title for the login dialog */
   title?: string;
 }
 
-/**
- * LoginForm Component
- * 
- * A form component for user authentication, featuring email/password login.
- */
-export function LoginForm({ 
-  isOpen: _isOpen, 
-  onClose 
-}: LoginFormProps) {
+export function LoginForm({ onClose, onAuthenticated, onBusyChange }: LoginFormProps) {
   const { login } = useAuth();
   const { toast } = useToast();
-  const [isLoading, setIsLoading] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
   const { t } = useI18n();
-
-  // Initialize form with validation
-  const form = useForm<LoginInput>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: {
-      email: '',
-      password: ''
-    }
+  const id = useId();
+  const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginInput>({
+    resolver: zodResolver(loginSchema), defaultValues: { email: '', password: '' },
   });
 
-  // Handle form submission
-  const onSubmit = async (data: LoginInput) => {
+  async function submit(data: LoginInput) {
+    setError('');
+    onBusyChange?.(true);
     try {
-      setIsLoading(true);
-      setLoginError(null);
-      
-      await login({
-        email: data.email,
-        password: data.password
-      });
-      
-      toast({
-        title: t('auth.login.success.title','Login successful'),
-        description: t('auth.login.success.desc','You have been logged in successfully.'),
-      });
-      
-      // Dispatch login success event
-      const loginSuccessEvent = new CustomEvent('auth:login-success', {
-        detail: { email: data.email }
-      });
-      window.dispatchEvent(loginSuccessEvent);
-      
-      // Close the dialog
-      onClose();
-      
-    } catch (error) {
-      console.error('Login error:', error);
-      let errorMessage = error instanceof Error ? error.message : 'An error occurred during login';
-      
-      if (errorMessage.includes('Network Error')) {
-        errorMessage = 'Network Error: Cannot connect to the authentication server. Please ensure the backend server is running on port 3002 and check your network connection.';
-      } else if (errorMessage.includes('timeout')) {
-        errorMessage = 'Request timeout: The server took too long to respond. Please try again later.';
-      } else if (errorMessage.includes('401')) {
-        errorMessage = 'Invalid credentials. Please check your email and password.';
-      } else if (errorMessage.includes('403')) {
-        errorMessage = 'Access denied. You do not have permission to log in.';
-      }
-      
-      setLoginError(errorMessage);
-      toast({
-        title: t('auth.login.failed.title','Login failed'),
-        description: errorMessage,
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      await login(data);
+      toast({ title: t('auth.login.success.title', 'Login successful'), description: t('auth.login.success.desc', 'You have been logged in successfully.') });
+      window.dispatchEvent(new CustomEvent('auth:login-success', { detail: { email: data.email } }));
+      (onAuthenticated ?? onClose)();
+    } catch (failure) {
+      const message = failure instanceof Error ? failure.message : '';
+      setError(/invalid.*(credential|login)|401/i.test(message)
+        ? t('auth.error.credentials', 'The email or password is incorrect. Please try again.')
+        : /not.confirmed/i.test(message)
+          ? t('auth.error.unconfirmed', 'Confirm your email before signing in. You can request another email below.')
+          : t('auth.error.login', 'Unable to sign in. Check your details and connection, then try again.'));
+    } finally { onBusyChange?.(false); }
+  }
 
-  return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        {loginError && (
-          <div className="p-3 rounded-md bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 text-sm">
-            {loginError}
-          </div>
-        )}
-        
-        <FormField
-          control={form.control}
-          name="email"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('auth.email','Email')}</FormLabel>
-              <FormControl>
-                <Input 
-                  placeholder={t('auth.email.placeholder','your.email@example.com')} 
-                  {...field} 
-                  disabled={isLoading}
-                  className="bg-background"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        
-        <FormField
-          control={form.control}
-          name="password"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('auth.password','Password')}</FormLabel>
-              <FormControl>
-                <Input 
-                  type="password" 
-                  placeholder="••••••••" 
-                  {...field} 
-                  disabled={isLoading}
-                  className="bg-background"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        
-        <div className="flex justify-between items-center">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground text-sm"
-            disabled={isLoading}
-            onClick={() => {
-              form.reset();
-              onClose();
-            }}
-          >
-            {t('common.cancel','Cancel')}
-          </Button>
-          
-          <Button type="submit" disabled={isLoading}>
-            {isLoading ? (
-              <>
-                <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
-                {t('auth.signingIn','Signing in...')}
-              </>
-            ) : (
-              t('auth.signIn.cta','Sign in')
-            )}
-          </Button>
-        </div>
-      </form>
-    </Form>
-  );
+  return <form onSubmit={handleSubmit(submit)} noValidate aria-busy={isSubmitting} className={styles.form}>
+    <div className={styles.field}>
+      <Label htmlFor={`${id}-email`}>{t('auth.email', 'Email')}</Label>
+      <div className={styles.inputWrap}>
+        <Mail size={18} aria-hidden="true" className={styles.inputIcon} />
+        <Input id={`${id}-email`} type="email" inputMode="email" autoComplete="email" autoCapitalize="none" spellCheck={false} placeholder="you@example.com" {...register('email')} disabled={isSubmitting} aria-invalid={!!errors.email} aria-describedby={errors.email ? `${id}-email-error` : undefined} className={`${styles.input} ${styles.withIcon}`} />
+      </div>
+      {errors.email && <p id={`${id}-email-error`} role="alert" className="text-sm text-destructive">{t('auth.validation.email', 'Please enter a valid email address.')}</p>}
+    </div>
+    <div className={styles.field}>
+      <div className={styles.labelRow}>
+        <Label htmlFor={`${id}-password`}>{t('auth.password', 'Password')}</Label>
+        <Link href="/auth/forgot-password" className={styles.recoveryLink} aria-disabled={isSubmitting} tabIndex={isSubmitting ? -1 : undefined} onClick={event => { if (isSubmitting) event.preventDefault(); }}>{t('auth.forgotLink', 'Forgot password?')}</Link>
+      </div>
+      <div className={styles.inputWrap}>
+        <LockKeyhole size={18} aria-hidden="true" className={styles.inputIcon} />
+        <Input id={`${id}-password`} type={showPassword ? 'text' : 'password'} autoComplete="current-password" placeholder={t('auth.password.placeholder', 'Your password')} {...register('password')} disabled={isSubmitting} aria-invalid={!!errors.password} aria-describedby={errors.password ? `${id}-password-error` : undefined} className={`${styles.input} ${styles.withIcon} ${styles.withToggle}`} />
+        <button type="button" className={styles.visibilityToggle} aria-label={showPassword ? t('auth.hidePassword', 'Hide password') : t('auth.showPassword', 'Show password')} aria-pressed={showPassword} aria-controls={`${id}-password`} disabled={isSubmitting} onClick={() => setShowPassword(value => !value)}>{showPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}</button>
+      </div>
+      {errors.password && <p id={`${id}-password-error`} role="alert" className="text-sm text-destructive">{t('auth.validation.passwordRequired', 'Enter your password.')}</p>}
+    </div>
+    {error && <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm leading-relaxed text-destructive">{error}</p>}
+    <Button type="submit" disabled={isSubmitting} className={styles.submit}>
+      {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />{t('auth.signingIn', 'Signing in...')}</> : <>{t('auth.signIn.cta', 'Sign in')}<ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" /></>}
+    </Button>
+    <Link href="/auth/resend" className={styles.resendLink} aria-disabled={isSubmitting} tabIndex={isSubmitting ? -1 : undefined} onClick={event => { if (isSubmitting) event.preventDefault(); }}>{t('auth.resendLink', 'Resend confirmation')}</Link>
+  </form>;
 }

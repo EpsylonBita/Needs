@@ -28,10 +28,10 @@ export function ErrorFallback({
     <div className="flex items-center justify-center p-4">
       <Card className="max-w-md w-full">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 h-12 w-12 text-red-500">
+          <div className="mx-auto mb-4 h-12 w-12 text-destructive">
             <AlertTriangle className="h-12 w-12" />
           </div>
-          <CardTitle className="text-xl text-red-600">
+          <CardTitle className="text-xl text-destructive">
             {title}
           </CardTitle>
           <CardDescription>
@@ -41,9 +41,9 @@ export function ErrorFallback({
         
         {showDetails && (
           <CardContent>
-            <div className="bg-gray-100 rounded-lg p-3">
-              <h4 className="font-semibold text-sm text-gray-700 mb-2">Error Details</h4>
-              <p className="text-sm text-gray-600 break-words">
+            <div className="bg-muted rounded-lg p-3">
+              <h4 className="font-semibold text-sm text-foreground mb-2">Error Details</h4>
+              <p className="text-sm text-muted-foreground break-words">
                 {error.message}
               </p>
             </div>
@@ -77,10 +77,10 @@ export function LoadingFallback({
     <div className="flex items-center justify-center p-4">
       <Card className="max-w-md w-full">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 h-12 w-12 text-blue-500">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+          <div className="mx-auto mb-4 h-12 w-12 text-primary">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
           </div>
-          <CardTitle className="text-xl text-blue-600">
+          <CardTitle className="text-xl text-primary">
             {title}
           </CardTitle>
           <CardDescription>
@@ -113,10 +113,10 @@ export function EmptyFallback({
     <div className="flex items-center justify-center p-4">
       <Card className="max-w-md w-full">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 h-12 w-12 text-gray-400">
+          <div className="mx-auto mb-4 h-12 w-12 text-muted-foreground">
             <AlertTriangle className="h-12 w-12" />
           </div>
-          <CardTitle className="text-xl text-gray-600">
+          <CardTitle className="text-xl text-muted-foreground">
             {title}
           </CardTitle>
           <CardDescription>

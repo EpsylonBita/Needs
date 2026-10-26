@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export default function SearchPage() {
   return (
-    <div className="container py-6 space-y-6">
+    <div className="needs-shell needs-search-page">
       <Suspense fallback={<Skeleton className="h-20 w-full" />}>
         <ClientSearchPage />
       </Suspense>

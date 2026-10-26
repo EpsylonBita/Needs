@@ -15,7 +15,7 @@ export default function AdminNotificationsPage() {
 
   useEffect(() => {
     const run = async () => {
-      let q = supabase.from('notifications').select('id,user_id,type,payload,read,created_at').order('created_at', { ascending: false }).limit(100)
+      const q = supabase.from('notifications').select('id,user_id,type,payload,read,created_at').order('created_at', { ascending: false }).limit(100)
       const { data } = await q
       setRows((data || []) as NotificationRow[])
     }
@@ -38,12 +38,12 @@ export default function AdminNotificationsPage() {
     <div className="container mx-auto p-4">
       <h1 className="text-2xl font-bold">Notifications (Admin)</h1>
       <div className="mt-2 flex gap-2">
-        <input value={userIdFilter} onChange={(e)=>setUserIdFilter(e.target.value)} className="border rounded-md p-2" placeholder="Filter by user id" />
-        <input value={typeFilter} onChange={(e)=>setTypeFilter(e.target.value)} className="border rounded-md p-2" placeholder="Filter by type" />
+        <input value={userIdFilter} onChange={(e)=>setUserIdFilter(e.target.value)} className="border border-input bg-background text-foreground rounded-md p-2" placeholder="Filter by user id" />
+        <input value={typeFilter} onChange={(e)=>setTypeFilter(e.target.value)} className="border border-input bg-background text-foreground rounded-md p-2" placeholder="Filter by type" />
       </div>
       <div className="mt-4 border rounded-md p-3 flex gap-2 items-center">
-        <input value={targetUser} onChange={(e)=>setTargetUser(e.target.value)} className="border rounded-md p-2" placeholder="Target user id" />
-        <input value={message} onChange={(e)=>setMessage(e.target.value)} className="flex-1 border rounded-md p-2" placeholder="Message" />
+        <input value={targetUser} onChange={(e)=>setTargetUser(e.target.value)} className="border border-input bg-background text-foreground rounded-md p-2" placeholder="Target user id" />
+        <input value={message} onChange={(e)=>setMessage(e.target.value)} className="flex-1 border border-input bg-background text-foreground rounded-md p-2" placeholder="Message" />
         <button onClick={broadcast} className="px-3 py-1 rounded-md bg-blue-600 text-white">Send</button>
       </div>
       <div className="mt-4 border rounded-md">

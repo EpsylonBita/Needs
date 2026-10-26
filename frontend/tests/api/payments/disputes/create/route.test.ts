@@ -1,9 +1,10 @@
-import { describe, it, expect, vi } from 'vitest'
 import { NextRequest } from 'next/server'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { POST } from '../../../../../app/api/payments/disputes/[id]/create/route'
 
 vi.mock('@/lib/supabase/server', () => ({
   supabaseAdmin: {
+    rpc: vi.fn(async () => ({ data: { dispute_id: 'complaint-1' }, error: null })),
     auth: { getUser: vi.fn(async () => ({ data: { user: { id: 'u1', email: 'buyer@test' } }, error: null })) },
     from: vi.fn((table: string) => {
       if (table === 'profiles') {
@@ -13,7 +14,7 @@ vi.mock('@/lib/supabase/server', () => ({
       }
       if (table === 'payments') {
         return {
-          select: vi.fn(() => ({ eq: vi.fn(() => ({ single: vi.fn(async () => ({ data: { id: 'pay1', buyer_id: 'profile123', seller_id: 'seller456', status: 'processing' }, error: null })) })) })),
+          select: vi.fn(() => ({ eq: vi.fn(() => ({ single: vi.fn(async () => ({ data: { id: 'pay1', buyer_id: 'profile123', seller_id: 'seller456', status: 'completed' }, error: null })) })) })),
           update: vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) }))
         }
       }
@@ -33,6 +34,26 @@ vi.mock('@/lib/supabase/server', () => ({
 }))
 
 describe('Payments Disputes Create', () => {
+  beforeEach(() => { vi.clearAllMocks() })
+  it('rejects an account switch before a complaint is created', async () => {
+    const { supabaseAdmin } = await import('@/lib/supabase/server')
+    const response = await POST(new NextRequest('http://localhost/api/payments/disputes/pay1/create', { method: 'POST', headers: { Authorization: 'Bearer token' }, body: JSON.stringify({ expectedUserId: 'another-user' }) }))
+    expect(response.status).toBe(403)
+    expect(supabaseAdmin.rpc).not.toHaveBeenCalled()
+  })
+  it('surfaces a capture reservation conflict without promising a refund or report success', async () => {
+    const { supabaseAdmin } = await import('@/lib/supabase/server')
+    vi.mocked(supabaseAdmin.rpc).mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'Payment capture is being reconciled. Try again after its status updates' } } as never)
+    const response = await POST(new NextRequest('http://localhost/api/payments/disputes/pay1/create', { method: 'POST', headers: { Authorization: 'Bearer token' }, body: '{}' }))
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({ error: 'Payment capture is being reconciled. Try again after its status updates' })
+  })
+  it('keeps reporting a problem available for eligible existing payments while new payments are disabled', async () => {
+    vi.stubEnv('NEXT_PUBLIC_PAYMENTS_ENABLED', 'false')
+    const response = await POST(new NextRequest('http://localhost/api/payments/disputes/pay1/create', { method: 'POST', headers: { Authorization: 'Bearer token' }, body: JSON.stringify({ expectedUserId: 'u1' }) }))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ success: true, disputeId: 'complaint-1' })
+  })
   it('POST opens dispute and returns X-Request-Id', async () => {
     const url = 'http://localhost/api/payments/disputes/pay1/create'
     const req = new NextRequest(url, { method: 'POST', headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' }, body: JSON.stringify({}) }) as any
@@ -40,6 +61,8 @@ describe('Payments Disputes Create', () => {
     const data = await res.json()
     expect(res.status).toBe(200)
     expect(data.success).toBe(true)
+    const { supabaseAdmin } = await import('@/lib/supabase/server')
+    expect(supabaseAdmin.rpc).toHaveBeenCalledWith('open_payment_complaint', { p_payment_id: 'pay1', p_buyer_id: 'profile123' })
     expect(res.headers.get('X-Request-Id')).toBeTruthy()
   })
 })

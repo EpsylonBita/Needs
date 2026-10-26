@@ -1,8 +1,8 @@
+import { authEmailRedirectUrl } from '@/lib/auth/email-links';
 import { supabase } from '@/lib/supabase/client';
 import { Profile } from '@/types/db';
 import { mapProfileToDomain, UserProfile } from '@/types/domain';
 
-// Re-export UserProfile as ProfileData for backward compatibility (temporarily)
 export type ProfileData = UserProfile;
 
 export interface UpdateProfileData {
@@ -15,133 +15,115 @@ export interface UpdateProfileData {
   coverImage?: string | File;
 }
 
+export interface ProfileUpdateResult extends UserProfile {
+  emailChangePending?: boolean;
+}
+
 export interface UploadPhotoResponse {
   url: string;
 }
 
+const profileColumns = 'id, user_id, display_name, avatar_url, title, bio, location, cover_image, reputation, rating_count, created_at';
+const failure = (error: unknown, fallback: string): Error => error instanceof Error
+  ? error
+  : new Error(typeof error === 'object' && error && 'message' in error ? String(error.message) : fallback);
+
+async function authenticatedUser(expectedUserId?: string) {
+  const { data, error } = await supabase.auth.getUser();
+  if (error) throw failure(error, 'Authentication failed');
+  if (!data.user) throw new Error('Not authenticated');
+  if (expectedUserId && data.user.id !== expectedUserId) throw new Error('Your session changed. Please try again.');
+  return data.user;
+}
+
+async function findProfile(userId: string) {
+  const { data, error } = await supabase.from('profiles').select(profileColumns)
+    .eq('user_id', userId).maybeSingle();
+  if (error) throw failure(error, 'Profile could not be loaded');
+  return data as Profile | null;
+}
+
 export const profileService = {
-  uploadPhoto: async (file: File, type: 'avatar' | 'cover'): Promise<UploadPhotoResponse> => {
-    const userRes = await supabase.auth.getUser();
-    const userId = userRes.data.user?.id;
-    if (!userId) throw new Error('Not authenticated');
-    const ext = file.name.split('.').pop() || 'jpg';
-    const path = `${userId}/${type}/${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
-    if (error) throw error;
+  uploadPhoto: async (file: File, type: 'avatar' | 'cover', expectedUserId?: string): Promise<UploadPhotoResponse> => {
+    const user = await authenticatedUser(expectedUserId);
+    if (!file.type.startsWith('image/') || file.size > 5 * 1024 * 1024) {
+      throw new Error('Please upload an image smaller than 5MB');
+    }
+    const ext = file.name.split('.').pop()?.replace(/[^a-zA-Z0-9]/g, '') || 'jpg';
+    const path = `${user.id}/${type}/${crypto.randomUUID()}.${ext}`;
+    const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: false });
+    if (error) throw failure(error, 'Photo could not be uploaded');
+    await authenticatedUser(user.id);
     const { data } = supabase.storage.from('avatars').getPublicUrl(path);
     return { url: data.publicUrl };
   },
 
-  updateProfile: async (data: UpdateProfileData): Promise<UserProfile> => {
-    const userRes = await supabase.auth.getUser();
-    const userId = userRes.data.user?.id;
-    if (!userId) throw new Error('Not authenticated');
-    const { data: profileRows } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: true })
-      .limit(1);
-    const profile = (profileRows || [])[0];
-    if (!profile?.id) throw new Error('Profile not found');
-    
+  updateProfile: async (data: UpdateProfileData, expectedUserId?: string): Promise<ProfileUpdateResult> => {
+    const user = await authenticatedUser(expectedUserId);
+    let profile = await findProfile(user.id);
+    if (!profile) throw new Error('Profile not found');
+    if (profile.user_id !== user.id) throw new Error('Your session changed. Please try again.');
+    const email = data.email?.trim();
+    if (email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new Error('Invalid email address');
+    }
     const updateData: Record<string, unknown> = {};
     if (data.fullName !== undefined) updateData.display_name = data.fullName;
     if (data.title !== undefined) updateData.title = data.title;
     if (data.bio !== undefined) updateData.bio = data.bio;
     if (data.location !== undefined) updateData.location = data.location;
-    
-    if (data.avatar) {
-      if (data.avatar instanceof File) {
-        const uploadResult = await profileService.uploadPhoto(data.avatar, 'avatar');
-        updateData.avatar_url = uploadResult.url;
-      } else if (typeof data.avatar === 'string' && data.avatar) {
-        updateData.avatar_url = data.avatar;
-      }
+    if (data.avatar !== undefined) {
+      updateData.avatar_url = typeof data.avatar === 'string'
+        ? data.avatar
+        : (await profileService.uploadPhoto(data.avatar, 'avatar', user.id)).url;
     }
-    if (data.coverImage) {
-      if (data.coverImage instanceof File) {
-        const uploadResult = await profileService.uploadPhoto(data.coverImage, 'cover');
-        updateData.cover_image = uploadResult.url;
-      } else if (typeof data.coverImage === 'string' && data.coverImage) {
-        updateData.cover_image = data.coverImage;
-      }
+    if (data.coverImage !== undefined) {
+      updateData.cover_image = typeof data.coverImage === 'string'
+        ? data.coverImage
+        : (await profileService.uploadPhoto(data.coverImage, 'cover', user.id)).url;
+    }
+    const hasProfileChanges = Object.keys(updateData).length > 0;
+    if (hasProfileChanges) {
+      await authenticatedUser(user.id);
+      const { data: updated, error } = await supabase.from('profiles').update(updateData)
+        .eq('id', profile.id).eq('user_id', user.id).select(profileColumns).single();
+      if (error) throw failure(error, 'Profile could not be updated');
+      if (!updated) throw new Error('Profile could not be updated');
+      profile = updated as Profile;
     }
 
-    const { data: updatedRows, error } = await supabase
-      .from('profiles')
-      .update(updateData)
-      .eq('id', profile.id)
-      .select('id, user_id, display_name, avatar_url, title, bio, location, cover_image, reputation, rating_count, created_at')
-      .single();
-      
-    if (error) throw error;
-    if (!updatedRows) throw new Error('Failed to update profile');
-
-    const authUser = (await supabase.auth.getUser()).data.user;
-    // Cast to Profile to ensure it matches the expected type from DB
-    const profileRecord = updatedRows as unknown as Profile;
-    
-    return mapProfileToDomain(profileRecord, authUser?.email);
+    let verifiedEmail = user.email;
+    let emailChangePending = false;
+    if (email !== undefined && email.toLowerCase() !== user.email?.toLowerCase()) {
+      await authenticatedUser(user.id);
+      const { data: authData, error } = await supabase.auth.updateUser({ email }, { emailRedirectTo: authEmailRedirectUrl('/auth/confirm') });
+      if (error) {
+        const message = failure(error, 'Email could not be updated').message;
+        throw new Error(hasProfileChanges ? `Profile saved, but the email change failed: ${message}` : message);
+      }
+      if (!authData.user) throw new Error('Email update returned no user. Please reload your profile.');
+      verifiedEmail = authData.user.email;
+      emailChangePending = verifiedEmail?.toLowerCase() !== email.toLowerCase();
+    }
+    await authenticatedUser(user.id);
+    return { ...mapProfileToDomain(profile, verifiedEmail), emailChangePending };
   },
 
   getProfile: async (): Promise<UserProfile> => {
-    const userRes = await supabase.auth.getUser();
-    const userId = userRes.data.user?.id;
-    console.log('getProfile - User ID:', userId);
-    if (!userId) throw new Error('Not authenticated');
-    
-    const { data: profileData, error } = await supabase
-      .from('profiles')
-      .select('id, user_id, display_name, avatar_url, title, bio, location, cover_image, reputation, rating_count, created_at')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    let profile = profileData;
-    
+    const user = await authenticatedUser();
+    let profile = await findProfile(user.id);
     if (!profile) {
-      console.log('getProfile - Creating new profile for user:', userId);
-      const { data: authUser } = await supabase.auth.getUser();
-      const fullName = authUser.user?.user_metadata?.fullName || authUser.user?.email || '';
-      console.log('getProfile - Creating profile with name:', fullName);
-      
-      const { error: upsertError } = await supabase.from('profiles').upsert({ 
-        user_id: userId, 
-        display_name: fullName, 
-        title: '', 
-        bio: '', 
-        location: '', 
-        cover_image: '' 
-      }, { onConflict: 'user_id' });
-      
-      if (upsertError) {
-        console.error('getProfile - Error creating profile:', upsertError);
-        throw upsertError;
-      }
-      
-      const { data: reselect } = await supabase
-        .from('profiles')
-        .select('id, user_id, display_name, avatar_url, title, bio, location, cover_image, reputation, rating_count, created_at')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: true })
-        .single();
-        
-      profile = reselect;
+      // Insert only: a concurrent request must never overwrite saved profile fields.
+      const fullName = user.user_metadata?.fullName || user.user_metadata?.full_name || user.email || '';
+      const { data, error } = await supabase.from('profiles')
+        .insert({ user_id: user.id, display_name: fullName }).select(profileColumns).single();
+      if (error && error.code !== '23505') throw failure(error, 'Profile could not be created');
+      profile = error ? await findProfile(user.id) : data as Profile;
     }
-    
-    if (error && !profile) throw error;
     if (!profile) throw new Error('Profile not found');
-    
-    const authUser = (await supabase.auth.getUser()).data.user;
-    const profileRecord = profile as unknown as Profile;
-    
-    return mapProfileToDomain(profileRecord, authUser?.email);
+    return mapProfileToDomain(profile, user.email);
   },
 };
 
 export const { updateProfile, getProfile, uploadPhoto } = profileService;
-
-// Add default export to match the import in index.ts
 export default profileService;

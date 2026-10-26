@@ -5,7 +5,7 @@ import { withApiErrorHandler, ErrorFactory } from '@/lib/utils/error-handler'
 export const GET = withApiErrorHandler(async (req: NextRequest) => {
   const auth = await requireAdmin(req, UserRole.ADMIN)
   if (!auth.allowed) {
-    throw ErrorFactory.authorization(auth.reason || 'forbidden')
+    return NextResponse.json({ allowed: false, error: 'Forbidden' }, { status: 403 })
   }
   return NextResponse.json({ 
     allowed: true, 

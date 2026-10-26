@@ -1,652 +1,285 @@
 "use client";
-
-import { useState, useEffect, useCallback } from "react";
-
-import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, Loader2 } from "lucide-react";
-import mapboxgl from 'mapbox-gl';
-import { useForm } from "react-hook-form";
-import * as z from "zod";
-
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft, ArrowRight, Check, Loader2, Sparkles } from 'lucide-react';
+import type mapboxgl from 'mapbox-gl';
+import { useForm, useWatch } from 'react-hook-form';
+import { toast } from 'sonner';
+import { z } from 'zod';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { useI18n } from '@/contexts/i18n-context';
+import { useAuth } from '@/contexts/auth-context';
 import { useMap } from '@/hooks/use-map';
-import { CATEGORY_STRUCTURE } from '@/lib/constants/categories'
-import { createListing } from '@/lib/services/listing-service'
-import { uploadListingImages } from '@/lib/services/storage-service'
+import { CATEGORY_STRUCTURE } from '@/lib/constants/categories';
+import { createListing, deleteListing, parseListingPrice } from '@/lib/services/listing-service';
+import { uploadListingImages, validateListingImages } from '@/lib/services/storage-service';
+import { getLocationAreaTag } from '@/lib/services/location-suggestions';
 import { witService } from '@/lib/services/wit-service';
-import { supabase } from '@/lib/supabase/client'
-import { withCsrfHeaders } from '@/lib/utils/csrf'
+import { CategoryTagsPicker } from './category-tags-picker';
+import { ImageUploader } from './image-uploader';
+import { LocationPicker } from './location-picker';
 
-import { AdBasicInfoForm } from './ad-basic-info-form'
-import { AiExtractPanel } from './ai-extract-panel'
-import { CategoryTagsPicker } from './category-tags-picker'
-import { ImageUploader } from './image-uploader'
-import { LocationPicker } from './location-picker'
- 
- 
-const formSchema = z.object({
-  title: z.string().min(3, "Title must be at least 3 characters"),
-  description: z.string().min(10, "Description must be at least 10 characters"),
-  category: z.string().min(1, "Please select a category"),
-  subcategory: z.string().min(1, "Please select a subcategory"),
-  price: z.string().optional(),
-  contactNumber: z.string().min(10, "Please enter a valid contact number"),
-  location: z.string().min(3, "Please enter a valid location"),
-  images: z.array(z.any()).optional(),
-  tags: z.array(z.string()).optional(),
-});
+type FormValues = { title: string; description: string; category: string; subcategory: string; price: string; contactNumber: string; location: string };
+type DraftField = 'title' | 'category' | 'subcategory' | 'price' | 'contactNumber' | 'location';
+const defaults: FormValues = { title: '', description: '', category: '', subcategory: '', price: '', contactNumber: '', location: '' };
 
-type FormValues = z.infer<typeof formSchema>;
-
-interface CreateAdDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+export function CreateAdDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return open ? <CreateAdForm onOpenChange={onOpenChange} /> : null;
 }
 
-export function CreateAdDialog({ open, onOpenChange }: CreateAdDialogProps) {
-  const [imageFiles, setImageFiles] = useState<File[]>([]);
-  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
+  const open = true;
+  const { locale } = useI18n();
+  const el = locale === 'el';
+  const { user } = useAuth();
+  const profilePhone = user?.phoneNumber?.trim() ?? '';
+  const queryClient = useQueryClient();
+  const [step, setStep] = useState<1 | 2>(1);
+  const [photos, setPhotos] = useState<{ file: File; preview: string }[]>([]);
+  const [isReadingPhotos, setIsReadingPhotos] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [analyzedDescription, setAnalyzedDescription] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [savedListingId, setSavedListingId] = useState<string | null>(null);
+  const [onboardRequired, setOnboardRequired] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [coordinates, setCoordinates] = useState<[number, number] | null>(null);
-  const [locationName, setLocationName] = useState("");
   const [isLocating, setIsLocating] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>("");
-  const [selectedSubcategory, setSelectedSubcategory] = useState<string>("");
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [_suggestedTags, setSuggestedTags] = useState<string[]>([]);
-  const [_openCategory, setOpenCategory] = useState(false);
-  const [_openSubcategory, setOpenSubcategory] = useState(false);
-  const [isLoadingTags, setIsLoadingTags] = useState(false);
-  const [nlpInput, setNlpInput] = useState("");
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysis, setAnalysis] = useState<{ tags: string[], smartTags: string[] }>({
-    tags: [],
-    smartTags: []
-  });
-  const [analysisSuccess, setAnalysisSuccess] = useState(false);
-  const [analysisError, setAnalysisError] = useState<string | null>(null);
-  const [onboardRequired, setOnboardRequired] = useState(false);
-
-  // Use map hook
-  const { map, initializeMap, updateMarker } = useMap();
-  const { t } = useI18n();
-
-  // Map initialization effect
-  useEffect(() => {
-    if (showMap && !map) {
-      initializeMap('location-map', {
-        center: coordinates || [23.7275, 37.9838], // Default to Athens
-        zoom: 12,
-        onClick: handleMapClick
-      });
+  const [extracted, setExtracted] = useState<{ tags: string[]; smartTags: string[]; price?: string; category?: string }>({ tags: [], smartTags: [] });
+  const [locationArea, setLocationArea] = useState<string | undefined>();
+  const manual = useRef(new Set<DraftField>());
+  const [tagEdits, setTagEdits] = useState<{ added: string[]; removed: string[] }>({ added: [], removed: [] });
+  const revision = useRef(0);
+  const photoRevision = useRef(0);
+  const photoBusy = useRef(false);
+  const submitting = useRef(false);
+  const mapClick = useRef<(event: mapboxgl.MapMouseEvent) => void>(() => {});
+  const { map, marker, initializeMap, updateMarker } = useMap();
+  const schema = z.object({
+    title: z.string().trim().min(3, el ? 'Γράψε έναν τίτλο με τουλάχιστον 3 χαρακτήρες.' : 'Enter a title with at least 3 characters.').max(200),
+    description: z.string().trim().min(10, el ? 'Πρόσθεσε λίγες λεπτομέρειες (τουλάχιστον 10 χαρακτήρες).' : 'Add a few details (at least 10 characters).').max(10000),
+    category: z.string().min(1, el ? 'Διάλεξε κατηγορία.' : 'Choose a category.'),
+    subcategory: z.string().min(1, el ? 'Διάλεξε είδος αγγελίας.' : 'Choose a listing type.'),
+    price: z.string().refine(value => { try { parseListingPrice(value); return true; } catch { return false; } }, el ? 'Βάλε έγκυρη τιμή σε ευρώ, π.χ. 25,50.' : 'Enter a valid price in euros, e.g. 25.50.'),
+    contactNumber: z.string().trim().max(50).refine(value => !value || /^\+?[\d ()-]{7,25}$/.test(value), el ? 'Έλεγξε τον αριθμό τηλεφώνου.' : 'Check the phone number.'),
+    location: z.string().trim().min(3, el ? 'Γράψε την περιοχή σου.' : 'Enter your area.'),
+  }).refine(data => !!CATEGORY_STRUCTURE[data.category as keyof typeof CATEGORY_STRUCTURE]?.subcategories.includes(data.subcategory), { path: ['subcategory'], message: el ? 'Διάλεξε έγκυρο είδος για αυτήν την κατηγορία.' : 'Choose a valid type for this category.' });
+  const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { ...defaults, contactNumber: profilePhone } });
+  const { register, handleSubmit, setValue, getValues, formState: { errors } } = form;
+  const description = useWatch({ control: form.control, name: 'description' });
+  const isAnalyzing = analyzedDescription !== description;
+  const selectedCategory = useWatch({ control: form.control, name: 'category' });
+  const selectedSubcategory = useWatch({ control: form.control, name: 'subcategory' });
+  const price = useWatch({ control: form.control, name: 'price' });
+  const contactNumber = useWatch({ control: form.control, name: 'contactNumber' });
+  const locationName = useWatch({ control: form.control, name: 'location' });
+  const analysis = useMemo(() => {
+    const tags = [...extracted.tags, ...extracted.smartTags].filter(tag => tag !== extracted.price && tag !== extracted.category);
+    if (selectedCategory) tags.push(el ? (selectedCategory === 'Items' ? 'Αντικείμενα' : 'Υπηρεσίες') : selectedCategory);
+    if (price.trim()) {
+      try { tags.push(`${parseListingPrice(price)}€`); } catch { /* An invalid price is never advertised as a tag. */ }
     }
-  }, [showMap, map, coordinates, initializeMap]);
+    if (locationArea) tags.push(locationArea);
+    return { tags: [], smartTags: [...new Map(tags.filter(tag => tag.trim() && tag.length <= 50).map(tag => [tag.toLocaleLowerCase(), tag])).values()].slice(0, 20) };
+  }, [extracted, selectedCategory, price, locationArea, el]);
+  const selectedTags = useMemo(() => [...new Map([...tagEdits.added, ...analysis.smartTags.filter(tag => !tagEdits.removed.includes(tag))].map(tag => [tag.toLocaleLowerCase(), tag])).values()].slice(0, 20), [analysis, tagEdits]);
+  useEffect(() => { if (open && step === 2) form.setFocus('description'); }, [open, step, form]);
 
-  // Initialize form
-  const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      title: "",
-      description: "",
-      category: "",
-      subcategory: "",
-      price: "",
-      contactNumber: "",
-      location: "",
-      images: [],
-      tags: []
-    }
-  });
+  useEffect(() => () => { ++photoRevision.current; ++revision.current; }, []);
 
-  const { register, handleSubmit, setValue, watch, formState: { errors }, getValues } = form;
-
-  // Reset form when dialog is closed
+  // Inferred values follow the description; explicit edits always win.
   useEffect(() => {
-    if (!open) {
-      // Reset all state when the dialog is closed
-      form.reset();
-      setSelectedCategory("");
-      setSelectedSubcategory("");
-      setSelectedTags([]);
-      setSuggestedTags([]);
-      setImageFiles([]);
-      setImagePreviews([]);
-      setNlpInput("");
-      setAnalysis({ tags: [], smartTags: [] });
-      setCoordinates(null);
-      setLocationName("");
-      setOnboardRequired(false);
-      setAnalysisError(null);
-    }
-  }, [open, form]);
-
-  // Check if user is onboarded when dialog opens
-  useEffect(() => {
-    if (open) {
-      const checkOnboarding = async () => {
-        try {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) return;
-
-          const { data: profileRows } = await supabase
-            .from('profiles')
-            .select('stripe_account_id')
-            .eq('user_id', user.id)
-            .order('created_at', { ascending: true })
-            .limit(1);
-
-          const profile = (profileRows || [])[0];
-          if (!profile?.stripe_account_id) {
-            setOnboardRequired(true);
-          }
-        } catch (error) {
-          console.error('Error checking onboarding status:', error);
+    if (!open) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const result = await witService.analyzeText(description);
+        if (cancelled) return;
+        for (const field of ['title', 'price'] as const) {
+          if (!manual.current.has(field)) setValue(field, result[field] ?? '');
         }
-      };
+        if (!manual.current.has('contactNumber')) setValue('contactNumber', result.contactNumber || profilePhone);
+        const category = manual.current.has('category') ? getValues('category') : result.category ?? '';
+        if (!manual.current.has('category')) setValue('category', category);
+        if (!manual.current.has('subcategory')) {
+          const valid = category && result.category === category && result.subcategory && CATEGORY_STRUCTURE[category as keyof typeof CATEGORY_STRUCTURE]?.subcategories.includes(result.subcategory);
+          setValue('subcategory', valid ? result.subcategory! : '');
+        }
+        if (getValues('subcategory') === 'Free') setValue('price', '0');
+        if (!manual.current.has('location') && getValues('location') !== (result.location ?? '')) {
+          ++revision.current; setCoordinates(null); setLocationArea(undefined); setValue('location', result.location ?? '');
+        }
+        setExtracted({ tags: result.tags, smartTags: result.smartTags, price: result.price, category: result.category });
+      } catch {
+        if (!cancelled) setError(el ? 'Η αυτόματη συμπλήρωση δεν είναι διαθέσιμη. Συμπλήρωσε τα πεδία.' : 'Automatic suggestions are unavailable. You can fill in the fields.');
+      } finally { if (!cancelled) setAnalyzedDescription(description); }
+    }, description.trim() ? 450 : 0);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [description, open, setValue, getValues, el, profilePhone]);
 
-      checkOnboarding();
-    }
-  }, [open]);
-
-  const handleMapClick = useCallback((event: mapboxgl.MapMouseEvent) => {
-    const [lng, lat] = event.lngLat.toArray();
-    setCoordinates([lng, lat]);
-    updateMarker([lng, lat]);
-    // Reverse geocode to get address
-    fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}`)
-      .then(response => response.json())
-      .then(data => {
-        const address = data.features[0]?.place_name;
-        setLocationName(address || "");
-        setValue("location", address || "");
-      });
-  }, [updateMarker, setCoordinates, setValue]);
-
-  const handleGeolocation = () => {
+  const changeLocation = (name: string) => {
+    manual.current.add('location'); ++revision.current; setIsLocating(false); setCoordinates(null); setLocationArea(undefined);
+    setValue('location', name, { shouldDirty: true, shouldValidate: true });
+  };
+  const selectLocation = (name: string, point: { lat: number; lng: number }, areaTag?: string) => {
+    manual.current.add('location'); ++revision.current; setIsLocating(false);
+    const selected: [number, number] = [point.lng, point.lat];
+    setCoordinates(selected); setLocationArea(areaTag); updateMarker(selected);
+    setValue('location', name, { shouldDirty: true, shouldValidate: true });
+    map?.flyTo({ center: selected, zoom: 13 });
+  };
+  const locate = useCallback(async (point: [number, number]) => {
+    const current = ++revision.current;
+    manual.current.add('location'); setLocationArea(undefined); setCoordinates(point); updateMarker(point); setIsLocating(true);
+    try {
+      const response = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${point.join(',')}.json?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}`);
+      if (!response.ok) throw new Error('location');
+      const result = await response.json();
+      if (current !== revision.current) return;
+      if (!result.features?.[0]?.place_name) throw new Error('location');
+      setLocationArea(getLocationAreaTag(result.features[0]));
+      setValue('location', result.features[0].place_name, { shouldValidate: true });
+    } catch {
+      if (current === revision.current) setError(el ? 'Δεν βρέθηκε διεύθυνση. Γράψε την περιοχή σου.' : 'Address not found. Enter your area instead.');
+    } finally { if (current === revision.current) setIsLocating(false); }
+  }, [updateMarker, setValue, el]);
+  useEffect(() => { mapClick.current = event => { void locate(event.lngLat.toArray() as [number, number]); }; }, [locate]);
+  useEffect(() => {
+    if (!showMap || step !== 2) return;
+    if (!process.env.NEXT_PUBLIC_MAPBOX_TOKEN) return;
+    if (!map) initializeMap('location-map', { center: coordinates ?? [23.7275, 37.9838], zoom: 12, onClick: event => mapClick.current(event) });
+    else map.resize();
+  }, [showMap, step, map, initializeMap, coordinates, el]);
+  useEffect(() => {
+    if (!map) return;
+    if (coordinates) updateMarker(coordinates);
+    else marker?.remove();
+  }, [map, marker, coordinates, updateMarker]);
+  const geolocate = () => {
+    if (!navigator.geolocation) { setError(el ? 'Η συσκευή δεν υποστηρίζει εντοπισμό.' : 'Location is unavailable on this device.'); return; }
+    const current = ++revision.current;
     setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { longitude, latitude } = position.coords;
-        setCoordinates([longitude, latitude]);
-        if (map) {
-          map.flyTo({ center: [longitude, latitude], zoom: 15 });
-          updateMarker([longitude, latitude]);
-        }
-        // Reverse geocode to get address
-        fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}`)
-          .then(response => response.json())
-          .then(data => {
-            const address = data.features[0]?.place_name;
-            setLocationName(address || "");
-            setValue("location", address || "");  
-          })
-          .finally(() => setIsLocating(false));
-      },
-      (error) => {
-        console.error("Error getting location:", error);
-        setIsLocating(false);
-      }
-    );
+    navigator.geolocation.getCurrentPosition(position => {
+      if (current !== revision.current) return;
+      void locate([position.coords.longitude, position.coords.latitude]);
+    }, () => { if (current !== revision.current) return; setIsLocating(false); setError(el ? 'Δεν ήταν δυνατός ο εντοπισμός. Γράψε την περιοχή σου.' : 'Could not find your location. Enter your area instead.'); }, { timeout: 10000 });
   };
 
-  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (files && files.length > 0) {
-      const newFiles = Array.from(files);
-      setImageFiles(prev => [...prev, ...newFiles]);
-      
-      // Create previews for new files
-      newFiles.forEach(file => {
+  const addPhotos = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (!files.length || photoBusy.current) return;
+    setPhotoError(null);
+    if (photos.length + files.length > 6) { setPhotoError(el ? 'Μπορείς να προσθέσεις έως 6 φωτογραφίες.' : 'You can add up to 6 photos.'); return; }
+    const current = ++photoRevision.current;
+    photoBusy.current = true; setIsReadingPhotos(true);
+    try {
+      await validateListingImages(files);
+      const additions = await Promise.all(files.map(file => new Promise<{ file: File; preview: string }>((resolve, reject) => {
         const reader = new FileReader();
-        reader.onloadend = () => {
-          setImagePreviews(prev => [...prev, reader.result as string]);
-        };
+        reader.onload = () => resolve({ file, preview: String(reader.result) });
+        reader.onerror = () => reject(new Error('read'));
         reader.readAsDataURL(file);
-      });
-    }
+      })));
+      if (current === photoRevision.current) setPhotos(previous => [...previous, ...additions]);
+    } catch {
+      if (current === photoRevision.current) setPhotoError(el ? 'Διάλεξε έγκυρες εικόνες JPG, PNG, WebP ή GIF έως 5 MB.' : 'Choose valid JPG, PNG, WebP or GIF images up to 5 MB each.');
+    } finally { photoBusy.current = false; setIsReadingPhotos(false); }
   };
-
-  const removeImage = (index: number) => {
-    setImageFiles(prev => prev.filter((_, i) => i !== index));
-    setImagePreviews(prev => prev.filter((_, i) => i !== index));
-  };
-
-  // Update the category selection
-  const handleCategorySelect = (category: string) => {
-    setSelectedCategory(category);
-    setSelectedSubcategory("");
-    setValue("category", category);
-    setValue("subcategory", "");
-    setSelectedTags([]);
-    setOpenCategory(false);
-  };
-
-  // Update the subcategory selection
-  const handleSubcategorySelect = (subcategory: string) => {
-    setSelectedSubcategory(subcategory);
-    setValue("subcategory", subcategory);
-    setOpenSubcategory(false);
-  };
-
-  // Get the title and description values for real-time watching
-  const title = watch("title");
-  const description = watch("description");
-
-  // Update the smart tags effect to use AI suggestions
-  useEffect(() => {
-    const content = `${title || ""} ${description || ""}`.toLowerCase().trim();
-    
-    if (selectedCategory && content.length >= 3) {
-      const fetchAISuggestions = async () => {
-        setIsLoadingTags(true);
-        try {
-          const headers = await withCsrfHeaders({
-            'Content-Type': 'application/json'
-          });
-          
-          const response = await fetch('/api/search', {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify({ 
-              title: title || "", 
-              description: description || "",
-              category: selectedCategory 
-            })
-          });
-          
-          const data = await response.json();
-          
-          if (!response.ok) {
-            throw new Error(data.error || 'Failed to fetch suggestions');
-          }
-          
-          if (data.suggestions) {
-            setSuggestedTags(data.suggestions);
-          }
-        } catch (error) {
-          console.error('Error getting AI tag suggestions:', error);
-          // Fallback to basic tag matching if AI fails
-          const categoryTags = Object.values(CATEGORY_STRUCTURE[selectedCategory as keyof typeof CATEGORY_STRUCTURE].tags)
-            .flat()
-            .filter(tag => {
-              const words = content.split(/\s+/);
-              return words.some(word => tag.toLowerCase().includes(word) || word.includes(tag.toLowerCase()));
-            });
-          setSuggestedTags(Array.from(new Set(categoryTags)));
-        } finally {
-          setIsLoadingTags(false);
-        }
-      };
-
-      // Debounce the API call
-      const timeoutId = setTimeout(() => {
-        fetchAISuggestions();
-      }, 500);
-
-      return () => clearTimeout(timeoutId);
-    } else {
-      setSuggestedTags([]);
-      setIsLoadingTags(false);
-    }
-  }, [title, description, selectedCategory]);
-
   const toggleTag = (tag: string) => {
-    setSelectedTags((prev) => {
-      const newTags = prev.includes(tag)
-        ? prev.filter((t) => t !== tag)
-        : [...prev, tag];
-      setValue("tags", newTags);
-      return newTags;
-    });
+    if (selectedTags.includes(tag)) setTagEdits(previous => ({ added: previous.added.filter(value => value !== tag), removed: [...previous.removed, tag] }));
+    else if (selectedTags.length < 20) setTagEdits(previous => ({ added: analysis.smartTags.includes(tag) ? previous.added : [...previous.added, tag], removed: previous.removed.filter(value => value !== tag) }));
   };
 
   const onSubmit = async (data: FormValues) => {
+    if (step !== 2 || submitting.current || isAnalyzing || isLocating || photoBusy.current || savedListingId) return;
+    submitting.current = true; setIsSubmitting(true); setError(null); setOnboardRequired(false);
+    let createdId: string | undefined;
+    const creatingUserId = user?.id;
     try {
-      setIsSubmitting(true);
-      setOnboardRequired(false); // Reset onboarding requirement
-      console.log("Starting ad creation with form data:", { ...data, tags: selectedTags });
-      
-      // Validate required fields
-      if (!selectedCategory) {
-        throw new Error('Please select a category');
+      let point = coordinates;
+      if (!point) {
+        if (!process.env.NEXT_PUBLIC_MAPBOX_TOKEN) throw new Error(el ? 'Η επαλήθευση τοποθεσίας δεν είναι διαθέσιμη.' : 'Location verification is unavailable.');
+        const response = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(data.location)}.json?limit=1&access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}`);
+        if (!response.ok) throw new Error(el ? 'Δεν βρέθηκε η περιοχή. Έλεγξε την ονομασία.' : 'Area not found. Check the name.');
+        const result = await response.json();
+        point = result.features?.[0]?.center ?? null;
+        if (!point) throw new Error(el ? 'Δεν βρέθηκε η περιοχή.' : 'Area not found.');
+        setCoordinates(point);
       }
-      if (!selectedSubcategory) {
-        throw new Error('Please select a subcategory');
+      const created = await createListing({ title: data.title, description: data.description, main_category: data.category as 'Items' | 'Services', sub_category: data.subcategory as 'Buy' | 'Sell' | 'Free' | 'I want' | 'I will' | 'I can', price: data.subcategory === 'Free' ? '0' : data.price, tags: selectedTags, coordinates: point, address: { label: data.location }, contact_number: data.contactNumber });
+      createdId = created.id;
+      if (photos.length) await uploadListingImages(created.id, photos.map(photo => photo.file));
+      toast.success(el ? 'Η αγγελία σου δημοσιεύτηκε!' : 'Your listing is published!');
+      onOpenChange(false);
+    } catch (failure) {
+      if (createdId) {
+        const failedListingId = createdId;
+        try { await deleteListing(createdId); createdId = undefined; }
+        catch {
+          setSavedListingId(failedListingId);
+          setError(el ? 'Η αγγελία αποθηκεύτηκε, αλλά οι φωτογραφίες δεν ολοκληρώθηκαν. Συνέχισε από τις αγγελίες σου.' : `Your listing ${createdId} is saved in My Listings, but photo upload did not complete. Manage its images there.`);
+          return;
+        }
       }
-      
-      const main_category = selectedCategory as 'Items' | 'Services'
-      const sub_category = selectedSubcategory as 'Buy' | 'Sell' | 'Free' | 'I want' | 'I will' | 'I can'
-
-      console.log("Creating listing with:", {
-        title: data.title,
-        description: data.description,
-        main_category,
-        sub_category,
-        price: data.price,
-        tags: selectedTags,
-        coordinates: coordinates,
-        address: locationName ? { label: locationName } : null,
-      });
-
-      const created = await createListing({
-        title: data.title,
-        description: data.description,
-        main_category,
-        sub_category,
-        price: data.price,
-        tags: selectedTags,
-        coordinates: coordinates,
-        address: locationName ? { label: locationName } : null,
-      })
-      
-      console.log("Listing created successfully:", created);
-      
-      if (created?.id && imageFiles.length > 0) {
-        console.log("Uploading images for listing:", created.id);
-        await uploadListingImages(created.id, imageFiles)
-        console.log("Images uploaded successfully");
-      }
-      
-      console.log("Closing dialog and resetting form");
-      onOpenChange?.(false);
-      form.reset();
-      setSelectedCategory("");
-      setSelectedSubcategory("");
-      setSelectedTags([]);
-      setSuggestedTags([]);
-      setImageFiles([]);
-      setImagePreviews([]);
-      console.log("Ad creation completed successfully");
-      
-    } catch (error) {
-      console.error("Error creating ad:", error);
-      const msg = error instanceof Error ? error.message : String(error)
-      
-      if (msg.includes('Seller not onboarded')) {
-        setOnboardRequired(true)
-        setAnalysisError('You need to complete Stripe onboarding to create listings. Click "Start Onboarding" above.');
-        setTimeout(() => setAnalysisError(null), 8000);
-      } else {
-        // Show user-friendly error message
-        setAnalysisError(`Failed to create ad: ${msg}`);
-        setTimeout(() => setAnalysisError(null), 5000);
-      }
+      const message = failure instanceof Error ? failure.message : String(failure);
+      if (message.includes('Seller not onboarded')) {
+        setOnboardRequired(true);
+        setError(el ? 'Για αγγελίες με πληρωμή χρειάζεται πρώτα ρύθμιση πληρωμών. Η φόρμα σου παραμένει ανοιχτή.' : 'Set up payments before publishing a paid offer. Your draft stays open.');
+      } else setError(`${el ? 'Δεν δημιουργήθηκε η αγγελία' : 'Failed to create ad'}: ${message}`);
     } finally {
-      setIsSubmitting(false);
+      if (createdId && creatingUserId) {
+        void queryClient.invalidateQueries({ queryKey: ['profile-overview', creatingUserId] });
+        void queryClient.invalidateQueries({ queryKey: ['my-listings', creatingUserId] });
+      }
+      submitting.current = false; setIsSubmitting(false);
     }
   };
+  const fieldError = (field: keyof FormValues) => errors[field] ? <p id={`create-${field}-error`} role="alert" className="mt-1 text-sm text-destructive">{errors[field]?.message}</p> : null;
+  const fieldA11y = (field: keyof FormValues) => ({ 'aria-invalid': !!errors[field], 'aria-describedby': errors[field] ? `create-${field}-error` : undefined });
 
-  const handleNlpAnalysis = async () => {
-    if (!nlpInput.trim()) {
-      setAnalysisError("Please enter some text to analyze");
-      setTimeout(() => setAnalysisError(null), 3000);
-      return;
-    }
-    
-    console.log("Analyzing input:", nlpInput);
-    setIsAnalyzing(true);
-    
-    try {
-      // Clear any previous analysis
-      setAnalysis({ tags: [], smartTags: [] });
-      
-      // Call the Wit.ai service
-      console.log("Calling witService.analyzeText with:", nlpInput);
-      
-      let result;
-      try {
-        result = await witService.analyzeText(nlpInput);
-        console.log('Wit.ai analysis result:', result);
-      } catch (apiError) {
-        console.error('Error from Wit.ai service:', apiError);
-        setAnalysisError("Failed to connect to Wit.ai service. Make sure your NEXT_PUBLIC_WIT_AI_TOKEN is set correctly in .env.local file.");
-        setTimeout(() => setAnalysisError(null), 5000);
-        setIsAnalyzing(false);
-        return;
-      }
-      
-      // Update form fields with the analysis results
-      if (result.title) {
-        console.log('Setting title:', result.title);
-        setValue("title", result.title);
-      }
-      
-      if (result.description) {
-        console.log('Setting description:', result.description);
-        setValue("description", result.description);
-      }
-      
-      // Handle category first - make sure it's a valid category from CATEGORY_STRUCTURE
-      if (result.category) {
-        console.log('Setting category:', result.category);
-        // Check if category is valid before setting it
-        if (Object.keys(CATEGORY_STRUCTURE).includes(result.category)) {
-          handleCategorySelect(result.category);
-        } else {
-          console.log(`AI suggested '${result.category}' but it's not available. Defaulting to 'Items'.`);
-          handleCategorySelect('Items');
-        }
-      } else {
-        // Default to Items category if none provided
-        console.log('No category found, defaulting to Items');
-        handleCategorySelect('Items');
-      }
-      
-      // Now handle subcategory after category is set
-      if (result.subcategory) {
-        console.log('Setting subcategory:', result.subcategory);
-        
-        // Get the current selected category from form values to ensure it's the most up-to-date
-        const category = getValues("category");
-        
-        if (!category) {
-          console.error('No category set, defaulting to Items');
-          handleCategorySelect('Items');
-        }
-        
-        // Get valid subcategories for the selected category
-        const validSubcategories = CATEGORY_STRUCTURE[category as keyof typeof CATEGORY_STRUCTURE]?.subcategories || [];
-        
-        // Check if subcategory is valid for the selected category
-        if (validSubcategories.includes(result.subcategory)) {
-          handleSubcategorySelect(result.subcategory);
-        } else {
-          console.error(`Invalid subcategory "${result.subcategory}" for category "${category}". Valid options are:`, validSubcategories);
-          
-          // Special handling for Services category
-          if (category === 'Services') {
-            // Map subcategory to a valid Services subcategory
-            let mappedSubcategory = 'I want'; // Default
-            
-            if (result.subcategory === 'Buy' || result.subcategory.toLowerCase().includes('want') || 
-                result.subcategory.toLowerCase().includes('need')) {
-              mappedSubcategory = 'I want';
-            } else if (result.subcategory === 'Sell' || result.subcategory.toLowerCase().includes('will') || 
-                       result.subcategory.toLowerCase().includes('offer')) {
-              mappedSubcategory = 'I will';
-            } else if (result.subcategory.toLowerCase().includes('can') || 
-                       result.subcategory.toLowerCase().includes('able')) {
-              mappedSubcategory = 'I can';
-            }
-            
-            console.log(`Mapping subcategory to valid Services subcategory: ${mappedSubcategory}`);
-            handleSubcategorySelect(mappedSubcategory);
-          } else {
-            // For other categories, show a notification instead of alert
-            setAnalysisError(`Invalid subcategory: ${result.subcategory}. Please select a valid subcategory for ${category}.`);
-            setTimeout(() => setAnalysisError(null), 3000);
-          }
-        }
-      }
-      
-      if (result.price) {
-        console.log('Setting price:', result.price);
-        setValue("price", result.price);
-      }
-      
-      if (result.contactNumber) {
-        console.log('Setting contact number:', result.contactNumber);
-        setValue("contactNumber", result.contactNumber);
-      }
-      
-      if (result.location) {
-        console.log('Setting location:', result.location);
-        setLocationName(result.location);
-        setValue("location", result.location);
-      }
-      
-      // Update both main category tags and smart tags
-      console.log('Setting tags:', result.tags);
-      console.log('Setting smartTags:', result.smartTags);
-      
-      // Store analysis results
-      setAnalysis({
-        tags: result.tags || [],
-        smartTags: result.smartTags || []
-      });
-      
-      // Combine all tags for the form value
-      const allTags = [...(result.tags || []), ...(result.smartTags || [])];
-      if (allTags.length > 0) {
-        console.log('Setting selectedTags:', allTags);
-        setSelectedTags(allTags);
-        setValue("tags", allTags);
-      }
-      
-      // Set success state for visual feedback (without requiring user interaction)
-      setAnalysisSuccess(true);
-      // Auto-hide the success message after 3 seconds
-      setTimeout(() => {
-        setAnalysisSuccess(false);
-      }, 3000);
-      
-      console.log("Analysis complete! Form fields have been updated.");
-      
-    } catch (error) {
-      console.error('Error analyzing text:', error);
-      if (error instanceof Error) {
-        setAnalysisError(`Failed to analyze text: ${error.message}`);
-      } else {
-        setAnalysisError('Failed to analyze text. Please try again.');
-      }
-      setTimeout(() => setAnalysisError(null), 3000);
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col bg-white dark:bg-gray-950">
-        <DialogHeader className="flex-none">
-          <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-transparent">
-            {t('ad.create.title','Create New Advertisement')}
-          </DialogTitle>
-          <DialogDescription className="text-gray-500 dark:text-gray-400">
-            {t('ad.create.desc','Fill in the details below to create your advertisement.')}
-          </DialogDescription>
-        </DialogHeader>
-
-        {/* Error notification */}
-        {analysisError && (
-          <div className="fixed top-4 right-4 z-50 bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-400 px-4 py-3 rounded-md shadow-md animate-in fade-in slide-in-from-right-8 duration-300">
-            <div className="flex items-center">
-              <AlertTriangle className="h-5 w-5 mr-2" />
-              <span>{analysisError}</span>
+  return <Dialog open={open} onOpenChange={value => { if (!submitting.current && !photoBusy.current) onOpenChange(value); }}>
+    <DialogContent closeLabel={el ? 'Κλείσιμο' : 'Close'} closeDisabled={isSubmitting || isReadingPhotos} className="flex max-h-[92dvh] w-[calc(100%-1rem)] flex-col overflow-hidden rounded-3xl bg-card p-5 text-card-foreground sm:max-w-[640px] sm:p-7" onInteractOutside={event => event.preventDefault()}>
+      <DialogHeader className="shrink-0 pr-9 text-left">
+        <DialogTitle className="text-2xl font-semibold tracking-tight">{el ? 'Νέα αγγελία' : 'New listing'}</DialogTitle>
+        <DialogDescription>{el ? 'Λίγα βήματα, και είσαι έτοιμος.' : 'A few details and you’re ready.'}</DialogDescription>
+      </DialogHeader>
+      <ol aria-label={el ? 'Βήματα αγγελίας' : 'Listing steps'} className="grid shrink-0 grid-cols-2 gap-2 text-sm">
+        {[el ? 'Φωτογραφίες' : 'Photos', el ? 'Πληροφορίες' : 'Details'].map((label, index) => <li key={label} aria-current={step === index + 1 ? 'step' : undefined} className={`flex items-center gap-2 rounded-xl px-3 py-2.5 ${step === index + 1 ? 'bg-primary/10 font-medium text-primary' : 'bg-muted text-muted-foreground'}`}><span className="flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs">{step > index + 1 ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : index + 1}</span>{label}</li>)}
+      </ol>
+      <form noValidate onSubmit={event => { void handleSubmit(onSubmit)(event); }} className="flex min-h-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 pb-2"><fieldset disabled={isSubmitting || !!savedListingId} className="min-w-0">
+          {step === 1 && <section className="space-y-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200">
+            <ImageUploader imagePreviews={photos.map(photo => photo.preview)} onRemove={index => setPhotos(previous => previous.filter((_, i) => i !== index))} onChange={addPhotos} disabled={isReadingPhotos} />
+            {isReadingPhotos && <p role="status" className="text-sm text-muted-foreground">{el ? 'Προετοιμασία φωτογραφιών…' : 'Preparing photos…'}</p>}
+            {photoError && <p role="alert" className="text-sm text-destructive">{photoError}</p>}
+          </section>}
+          <section hidden={step !== 2} className="space-y-5 pt-2 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
+            <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+              <Label htmlFor="create-description" className="text-base font-semibold">{el ? 'Τι θέλεις να ανεβάσεις;' : 'What would you like to list?'}</Label>
+              <Textarea id="create-description" {...register('description')} {...fieldA11y('description')} maxLength={10000} placeholder={el ? 'Π.χ. Πωλώ μεταχειρισμένο ποδήλατο σε καλή κατάσταση, 120€.' : 'E.g. Selling a used bicycle in good condition for 120€.'} className="mt-2 min-h-28 resize-y bg-background text-base" />
+              {fieldError('description')}
+              <p role="status" aria-live="polite" className="mt-2 flex items-start gap-2 text-xs leading-relaxed text-muted-foreground"><Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />{isAnalyzing ? (el ? 'Συμπληρώνουμε όσα αναγνωρίζουμε…' : 'Filling in recognized details…') : (el ? 'Κατηγορία, είδος, τίτλος, τιμή και tags συμπληρώνονται από το κείμενό σου. Έλεγξέ τα και άλλαξε ό,τι θέλεις.' : 'Category, type, title, price and tags fill from your text. Review them and change anything.')}</p>
             </div>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 overflow-hidden">
-          {onboardRequired && (
-            <div className="mb-4 p-3 rounded-md bg-yellow-100 text-yellow-800">
-              <div className="flex items-center justify-between">
-                <span>Complete Stripe onboarding to publish listings and receive payments.</span>
-                <a href="/payments/onboarding" className="ml-4 px-3 py-1 rounded-md bg-blue-600 text-white">Start Onboarding</a>
-              </div>
-            </div>
-          )}
-          <AiExtractPanel
-            nlpInput={nlpInput}
-            isAnalyzing={isAnalyzing}
-            analysisSuccess={analysisSuccess}
-            onChange={setNlpInput}
-            onAnalyze={handleNlpAnalysis}
-          />
-
-          {/* Main content - scrollable */}
-          <div className="flex-1 overflow-y-auto pr-2 space-y-6">
-            <div className="space-y-6">
-              <AdBasicInfoForm register={register as any} errors={errors} />
-
-              <CategoryTagsPicker
-                selectedCategory={selectedCategory}
-                selectedSubcategory={selectedSubcategory}
-                selectedTags={selectedTags}
-                analysis={analysis}
-                isLoadingTags={isLoadingTags}
-                onCategorySelect={handleCategorySelect}
-                onSubcategorySelect={handleSubcategorySelect}
-                onToggleTag={toggleTag}
-                categoryError={errors.category?.message}
-                subcategoryError={errors.subcategory?.message}
-              />
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <LocationPicker
-                  locationName={locationName}
-                  showMap={showMap}
-                  coordinates={coordinates}
-                  isLocating={isLocating}
-                  errorMessage={errors.location?.message}
-                  onLocationNameChange={(name) => setLocationName(name)}
-                  onToggleMap={() => setShowMap(!showMap)}
-                  onUseCurrentLocation={handleGeolocation}
-                />
-              </div>
-
-              <div>
-                <Label className="text-base font-semibold text-blue-600 dark:text-blue-400">
-                  {t('ad.images.upload','Upload Images')}
-                </Label>
-                <ImageUploader imagePreviews={imagePreviews} onRemove={removeImage} onChange={handleImageChange} />
-              </div>
-            </div>
-          </div>
-
-          {/* Footer - fixed */}
-          <div className="flex-none pt-6 mt-6 border-t border-gray-200 dark:border-gray-800">
-            <div className="flex justify-end gap-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                className="border-0 ring-1 ring-gray-200 dark:ring-gray-800 hover:bg-gray-100 dark:hover:bg-gray-900 hover:ring-gray-300 dark:hover:ring-gray-700"
-              >
-                {t('common.cancel','Cancel')}
-              </Button>
-              <Button
-                type="submit"
-                disabled={isSubmitting}
-                className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 transition-all duration-300"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    {t('ad.creating','Creating...')}
-                  </>
-                ) : (
-                  t('ad.create.submit','Create Advertisement')
-                )}
-              </Button>
-            </div>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
+            <CategoryTagsPicker selectedCategory={selectedCategory} selectedSubcategory={selectedSubcategory} selectedTags={selectedTags} analysis={analysis} isLoadingTags={isAnalyzing} onCategorySelect={value => { manual.current.add('category'); manual.current.add('subcategory'); setValue('category', value, { shouldValidate: true }); setValue('subcategory', ''); }} onSubcategorySelect={value => { manual.current.add('category'); manual.current.add('subcategory'); setValue('subcategory', value, { shouldValidate: true }); if (value === 'Free') { manual.current.add('price'); setValue('price', '0'); } }} onToggleTag={toggleTag} onAddTag={tag => { if (!selectedTags.includes(tag)) toggleTag(tag); }} categoryError={errors.category?.message} subcategoryError={errors.subcategory?.message}>
+            <div><Label htmlFor="create-title">{el ? 'Τίτλος' : 'Title'}</Label><Input id="create-title" {...register('title')} onChange={event => { manual.current.add('title'); void register('title').onChange(event); }} {...fieldA11y('title')} maxLength={200} className="mt-2 min-h-11 text-base" />{fieldError('title')}</div>
+            <div><Label htmlFor="create-price">{el ? 'Τιμή (€)' : 'Price (€)'}</Label><Input id="create-price" {...register('price')} onChange={event => { manual.current.add('price'); void register('price').onChange(event); }} {...fieldA11y('price')} disabled={selectedSubcategory === 'Free'} inputMode="decimal" placeholder="0" className="mt-2 min-h-11 text-base" /><p className="mt-1 text-xs text-muted-foreground">{selectedSubcategory === 'Free' ? (el ? 'Η αγγελία είναι δωρεάν.' : 'This listing is free.') : (el ? 'Προαιρετικό. Συμπλήρωσε τη συνολική τιμή, εφόσον υπάρχει.' : 'Optional. Enter the total price, if applicable.')}</p>{fieldError('price')}</div>
+            </CategoryTagsPicker>
+            <LocationPicker locationName={locationName} showMap={showMap} coordinates={coordinates} isLocating={isLocating} errorMessage={errors.location?.message} onLocationNameChange={changeLocation} onLocationSelect={selectLocation} onToggleMap={() => { if (!process.env.NEXT_PUBLIC_MAPBOX_TOKEN) setError(el ? 'Ο χάρτης δεν είναι διαθέσιμος.' : 'The map is unavailable.'); else setShowMap(value => !value); }} onUseCurrentLocation={geolocate} />
+            <div><Label htmlFor="create-contact">{el ? 'Τηλέφωνο (προαιρετικό)' : 'Phone (optional)'}</Label><Input id="create-contact" {...register('contactNumber')} onChange={event => { manual.current.add('contactNumber'); void register('contactNumber').onChange(event); }} {...fieldA11y('contactNumber')} type="tel" autoComplete="tel" maxLength={50} className="mt-2 min-h-11 text-base" /><p className="mt-1 text-xs text-muted-foreground">{profilePhone && contactNumber === profilePhone ? (el ? 'Συμπληρώθηκε από το προφίλ σου. Θα εμφανίζεται στην αγγελία· μπορείς να το αλλάξεις ή να το αφαιρέσεις.' : 'Filled from your profile. Visible on your listing; you can change or remove it.') : (el ? 'Θα εμφανίζεται στην αγγελία σου. Μπορείς να επικοινωνείς μόνο με μηνύματα.' : 'Visible on your listing. You can use messages only instead.')}</p>{fieldError('contactNumber')}</div>
+          </section>
+        </fieldset></div>
+        {error && <div role="alert" className="mt-3 max-h-32 shrink-0 overflow-y-auto rounded-xl border border-destructive/25 bg-destructive/5 p-3 text-sm"><p>{error}</p>{onboardRequired && <a className="mt-2 inline-flex min-h-11 items-center font-medium text-primary underline" href="/payments/onboarding" target="_blank" rel="noopener noreferrer">{el ? 'Ρύθμιση πληρωμών (νέα καρτέλα)' : 'Set up payments (new tab)'}</a>}{savedListingId && <a className="mt-2 inline-flex min-h-11 items-center font-medium text-primary underline" href={`/dashboard/listings/${savedListingId}/images`}>{el ? 'Διαχείριση φωτογραφιών' : 'Manage photos'}</a>}</div>}
+        <div className="mt-4 flex shrink-0 items-center justify-between gap-3 border-t border-border pt-4">
+          {step === 1 ? <><span className="text-xs text-muted-foreground">{el ? 'Οι φωτογραφίες είναι προαιρετικές' : 'Photos are optional'}</span><Button type="button" disabled={isReadingPhotos} onClick={event => { event.preventDefault(); setStep(2); }} className="min-h-11 shrink-0">{photos.length ? (el ? 'Συνέχεια' : 'Continue') : (el ? 'Χωρίς φωτογραφία' : 'Skip photos')}<ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" /></Button></> : <><Button type="button" variant="ghost" disabled={isSubmitting || !!savedListingId} onClick={() => setStep(1)} className="min-h-11"><ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />{el ? 'Πίσω' : 'Photos'}{photos.length > 0 && ` (${photos.length})`}</Button><Button key="publish-listing" type="submit" disabled={isSubmitting || isAnalyzing || isLocating || !!savedListingId} className="min-h-11">{isSubmitting && <Loader2 aria-hidden="true" className="mr-2 h-4 w-4 animate-spin" />}{isSubmitting ? (el ? 'Δημοσίευση…' : 'Publishing…') : (el ? 'Δημοσίευση' : 'Publish listing')}</Button></>}
+        </div>
+      </form>
+    </DialogContent>
+  </Dialog>;
 }

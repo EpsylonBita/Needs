@@ -44,20 +44,26 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
       throw ErrorFactory.authorization('Forbidden - can only onboard your own profile')
     }
 
-    const { data: userAdmin } = await supabaseAdmin.auth.admin.getUserById(user.id)
-    const email = userAdmin.user?.email || undefined
+    const email = user.email_confirmed_at ? user.email : undefined
 
     let accountId = requesterProfile.stripe_account_id as string | null
     if (!accountId) {
-      const account = await stripe.accounts.create({ type: 'express', email })
+      const account = await stripe.accounts.create({
+        type: 'express', email,
+        capabilities: { transfers: { requested: true } },
+        metadata: { profile_id: profileId },
+      }, { idempotencyKey: `connect:${user.id}` })
       accountId = account.id
-      await supabaseAdmin
+      const { error: saveError } = await supabaseAdmin
         .from('profiles')
         .update({ stripe_account_id: accountId })
         .eq('id', profileId)
+      if (saveError) throw ErrorFactory.database('Could not save the payout account')
     }
 
-    const returnUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const configuredUrl = process.env.NEXT_PUBLIC_APP_URL
+    if (!configuredUrl) throw ErrorFactory.system('Application URL is not configured for Stripe onboarding')
+    const returnUrl = new URL(configuredUrl).origin
     const link = await stripe.accountLinks.create({
       account: accountId!,
       refresh_url: `${returnUrl}/payments/onboarding/refresh`,

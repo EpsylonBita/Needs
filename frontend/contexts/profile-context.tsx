@@ -1,9 +1,9 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { profileService, ProfileData, UpdateProfileData } from '@/lib/services/profile-service';
 import { useToast } from '@/components/ui/use-toast';
-import { supabase } from '@/lib/supabase/client';
+import { useAuth } from './auth-context';
 
 interface ProfileContextState {
   profile: ProfileData | null;
@@ -30,73 +30,81 @@ const ProfileContext = createContext<ProfileContextValue | undefined>(undefined)
  * Manages user profile data and provides update functionality
  */
 export function ProfileProvider({ children }: ProfileProviderProps) {
+  const { user, isInitialized } = useAuth();
+  const userId = user?.id;
+  const currentUserId = useRef(userId);
+  currentUserId.current = userId;
+  const requestVersion = useRef(0);
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const { toast } = useToast();
 
-  useEffect(() => {
-    const init = async () => {
-      const u = await supabase.auth.getUser();
-      setIsAuthenticated(!!u.data.user);
-    };
-    init();
-  }, []);
-
-  const fetchProfile = async () => {
+  const fetchProfile = useCallback(async () => {
+    const version = ++requestVersion.current;
+    const isCurrent = () => version === requestVersion.current && currentUserId.current === userId;
+    setError(null);
+    if (!isInitialized || !userId) {
+      setProfile(null);
+      setIsLoading(!isInitialized);
+      return;
+    }
     try {
       setIsLoading(true);
-      const u = await supabase.auth.getUser();
-      if (!u.data.user) {
-        setProfile(null);
-        setIsAuthenticated(false);
-        return;
-      }
-      setIsAuthenticated(true);
       const data = await profileService.getProfile();
-      setProfile(data);
-      setError(null);
+      if (isCurrent() && data.userId === userId) setProfile(data);
     } catch (err) {
-      setError(err as Error);
-      setProfile(null);
+      if (isCurrent()) {
+        setError(err instanceof Error ? err : new Error('Failed to load profile'));
+        setProfile(null);
+      }
     } finally {
-      setIsLoading(false);
+      if (isCurrent()) setIsLoading(false);
     }
-  };
+  }, [isInitialized, userId]);
 
   const updateProfileData = async (data: UpdateProfileData) => {
+    if (!userId) throw new Error('Not authenticated');
+    // A pending upload may still hold a callback from a previous account.
+    if (currentUserId.current !== userId) throw new Error('Your session changed. Please try again.');
+    const version = ++requestVersion.current;
+    const isCurrent = () => version === requestVersion.current && currentUserId.current === userId;
     try {
       setIsLoading(true);
-      const updatedProfile = await profileService.updateProfile(data);
+      setError(null);
+      const updatedProfile = await profileService.updateProfile(data, userId);
+      if (currentUserId.current !== userId || updatedProfile.userId !== userId) throw new Error('Your session changed. Please try again.');
+      if (!isCurrent()) return;
       setProfile(updatedProfile);
       toast({
         title: 'Success',
-        description: 'Profile updated successfully',
+        description: updatedProfile.emailChangePending
+          ? 'Profile saved. Check your email to confirm the new address.'
+          : 'Profile updated successfully',
       });
     } catch (err) {
-      console.error('Error updating profile:', err);
-      setError(err instanceof Error ? err : new Error('Failed to update profile'));
-      toast({
-        title: 'Error',
-        description: 'Failed to update profile',
-        variant: 'destructive',
-      });
+      if (isCurrent()) {
+        const failure = err instanceof Error ? err : new Error('Failed to update profile');
+        setError(failure);
+        toast({ title: 'Error', description: failure.message, variant: 'destructive' });
+      }
       throw err;
     } finally {
-      setIsLoading(false);
+      if (isCurrent()) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchProfile();
-  }, []);
+    setProfile(null);
+    void fetchProfile();
+    return () => { ++requestVersion.current; };
+  }, [fetchProfile]);
 
   const contextValue: ProfileContextValue = {
-    profile,
+    profile: profile?.userId === userId ? profile : null,
     isLoading,
     error,
-    isAuthenticated,
+    isAuthenticated: isInitialized && !!userId,
     refreshProfile: fetchProfile,
     updateProfile: updateProfileData,
   };

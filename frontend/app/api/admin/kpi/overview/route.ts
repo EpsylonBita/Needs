@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin, UserRole } from '@/lib/auth/role-based-admin'
 import { supabaseAdmin } from '@/lib/supabase/server'
-import { rateLimitEnhanced, RateLimitConfigs } from '@/lib/utils/rate-limit-enhanced'
 import { withApiErrorHandler, ErrorFactory } from '@/lib/utils/error-handler'
+import { rateLimitEnhanced, RateLimitConfigs } from '@/lib/utils/rate-limit-enhanced'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +14,7 @@ export const GET = withApiErrorHandler(async (req: NextRequest) => {
     RateLimitConfigs.ADMIN.key(`kpi:${auth.user?.id || 'unknown'}:${ip}`),
     RateLimitConfigs.ADMIN.limit,
     RateLimitConfigs.ADMIN.windowMs,
-    { message: RateLimitConfigs.ADMIN.message }
+    { message: RateLimitConfigs.ADMIN.message, failClosed: true }
   )
   if (!rl.allowed) throw ErrorFactory.rateLimit('rate_limited')
   const now = Date.now()

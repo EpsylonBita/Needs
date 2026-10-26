@@ -7,6 +7,7 @@ import { Moon, Sun } from "lucide-react"
 import { useTheme } from "@/components/theme-provider"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { useI18n } from '@/contexts/i18n-context';
 
 export interface ThemeToggleProps extends React.HTMLAttributes<HTMLButtonElement> {
   /** Optionally show text label alongside icon */
@@ -31,6 +32,7 @@ export function ThemeToggle({
   ...props
 }: ThemeToggleProps) {
   const { setTheme, isDarkMode } = useTheme()
+  const { t } = useI18n();
   const [isMounted, setIsMounted] = React.useState(false)
 
   // Wait for component to mount to avoid hydration mismatch
@@ -55,7 +57,7 @@ export function ThemeToggle({
       size={size}
       className={className}
       onClick={() => setTheme(isDarkMode ? "light" : "dark")}
-      aria-label={`Switch to ${isDarkMode ? "light" : "dark"} theme`}
+      aria-label={isDarkMode ? t('modern.theme.light', 'Switch to light theme') : t('modern.theme.dark', 'Switch to dark theme')}
       {...props}
     >
       {isDarkMode ? (
@@ -64,7 +66,7 @@ export function ThemeToggle({
         <Moon className="h-5 w-5 transition-all" />
       )}
       {showLabel && (
-        <span className="ml-2">{isDarkMode ? "Light" : "Dark"} Mode</span>
+        <span>{isDarkMode ? t('modern.theme.lightLabel', 'Light mode') : t('modern.theme.darkLabel', 'Dark mode')}</span>
       )}
     </Button>
   )

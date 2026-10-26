@@ -16,7 +16,7 @@ export function SubcategoryList({ subcategories }: SubcategoryListProps) {
       {subcategories.map((subcategory) => (
         <Link 
           key={subcategory._id} 
-          href={`/categories/${subcategory.categoryId}/${subcategory.slug}`}
+          href={`/${subcategory.categoryId === 'services' ? 'services' : 'items'}?${new URLSearchParams({ subcategory: subcategory.name }).toString()}`}
         >
           <Card className="hover:shadow-lg transition-shadow">
             {subcategory.imageUrl && (

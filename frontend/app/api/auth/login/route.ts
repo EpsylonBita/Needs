@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { userLoginSchema, validateInput } from '@/lib/validations/security-schemas';
+import { withApiErrorHandler, ErrorFactory } from '@/lib/utils/error-handler';
 import { log } from '@/lib/utils/logger';
 import { rateLimitEnhanced, RateLimitConfigs } from '@/lib/utils/rate-limit-enhanced';
-import { withApiErrorHandler, ErrorFactory } from '@/lib/utils/error-handler';
+import { userLoginSchema, validateInput } from '@/lib/validations/security-schemas';
 
 export const POST = withApiErrorHandler(async (request: NextRequest) => {
   try {
@@ -21,6 +21,7 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
       RateLimitConfigs.LOGIN.windowMs,
       {
         message: RateLimitConfigs.LOGIN.message,
+        failClosed: true,
         isAuthenticated: false // Login attempts are always treated as anonymous
       }
     );

@@ -34,7 +34,7 @@ export const registrationSchema = z.object({
   name: z.string().min(2).max(100).optional(),
   username: z.string().min(3).max(30).optional(),
   acceptTerms: z.literal(true, {
-    errorMap: () => ({ message: 'You must accept the terms and conditions' }),
+    error: 'You must accept the terms and conditions',
   })
 }).refine((data) => data.password === data.confirmPassword, {
   message: 'Passwords do not match',
@@ -66,4 +66,4 @@ export type User = z.infer<typeof userSchema>;
 export type LoginCredentials = z.infer<typeof loginSchema>;
 export type RegistrationData = z.infer<typeof registrationSchema>;
 export type PasswordResetRequest = z.infer<typeof passwordResetRequestSchema>;
-export type PasswordReset = z.infer<typeof passwordResetSchema>; 
+export type PasswordReset = z.infer<typeof passwordResetSchema>;

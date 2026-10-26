@@ -1,5 +1,6 @@
 import { Suspense, type ReactNode } from 'react';
-import { Inter as FontSans } from "next/font/google";
+import { Noto_Sans as FontSans } from "next/font/google";
+import { cookies, headers } from 'next/headers';
 
 import { Toaster as SonnerToaster } from "sonner";
 
@@ -8,32 +9,36 @@ import "@/app/globals.css";
 import { CriticalErrorBoundary } from "@/components/common/error-boundary";
 import { Footer } from "@/components/layout/footer";
 import { Navbar } from "@/components/layout/navbar";
+import { SkipLink } from "@/components/layout/skip-link";
 import { Toaster } from "@/components/ui/toaster";
 import { ContextProviders } from "@/contexts/providers";
 
 import type { Metadata } from "next";
 
-const inter = FontSans({ subsets: ["latin"] });
+const fontSans = FontSans({ subsets: ["latin", "greek"], display: "swap", variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: "Needs",
   description: "Find what you need",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: ReactNode;
 }) {
+  const nonce = (await headers()).get('x-nonce') || undefined;
+  const initialLocale = (await cookies()).get('locale')?.value === 'el' ? 'el' : 'en';
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
+    <html lang={initialLocale} suppressHydrationWarning>
+      <body className={`${fontSans.className} ${fontSans.variable}`}>
         <CriticalErrorBoundary>
           <Suspense fallback={<div>Loading...</div>}>
-            <ContextProviders>
+            <ContextProviders nonce={nonce} initialLocale={initialLocale}>
+              <SkipLink />
               <div className="flex min-h-screen flex-col">
                 <Navbar />
-                <main className="relative flex-grow">{children}</main>
+                <main id="main-content" tabIndex={-1} className="relative flex-grow">{children}</main>
                 <Footer />
                 <Toaster />
                 <SonnerToaster />

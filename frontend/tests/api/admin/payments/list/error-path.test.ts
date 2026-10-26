@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import { GET } from '../../../../../app/api/admin/payments/list/route'
 
+vi.mock('@/lib/auth/admin', () => ({ requireAdmin: vi.fn(async (request: NextRequest) => ({ allowed: request.headers.get('authorization') === 'Bearer admin-token', reason: 'forbidden' })) }))
+
 vi.mock('@/lib/supabase/server', () => ({
   supabaseAdmin: {
     from: vi.fn(() => {
@@ -20,7 +22,7 @@ vi.mock('@/lib/supabase/server', () => ({
 
 describe('Admin Payments List - Error Path', () => {
   it('GET returns 500 with X-Request-Id on db error', async () => {
-    const req = new NextRequest('http://localhost/api/admin/payments/list?status=all&year=2025&limit=10&offset=0', { method: 'GET' }) as any
+    const req = new NextRequest('http://localhost/api/admin/payments/list?status=all&year=2025&limit=10&offset=0', { method: 'GET', headers: { Authorization: 'Bearer admin-token' } }) as any
     const res = await GET(req)
     const data = await res.json()
     expect(res.status).toBe(500)

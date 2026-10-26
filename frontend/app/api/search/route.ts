@@ -1,17 +1,15 @@
 import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-import { withApiErrorHandler, ErrorFactory, createValidationError } from '@/lib/utils/error-handler';
-import natural from 'natural';
-import { rateLimitEnhanced, RateLimitConfigs } from '@/lib/utils/rate-limit-enhanced';
+import { NGrams } from 'natural/lib/natural/ngrams';
+import { WordTokenizer } from 'natural/lib/natural/tokenizers';
+import { withApiErrorHandler, createValidationError } from '@/lib/utils/error-handler';
 import { log } from '@/lib/utils/logger';
+import { rateLimitEnhanced, RateLimitConfigs } from '@/lib/utils/rate-limit-enhanced';
 
-const ITEMS_PER_PAGE = 12;
+import { parseSearchQuery, searchListings, SearchValidationError } from './search-query';
+import type { NextRequest } from 'next/server';
 
 // Initialize NLP tools
-const tokenizer = new natural.WordTokenizer();
-const TfIdf = natural.TfIdf;
-const stemmer = natural.PorterStemmer;
-const NGrams = natural.NGrams;
+const tokenizer = new WordTokenizer();
 
 // Category-specific tags structure matching the frontend
 type CategoryGroup = 'Electronics' | 'Home & Living' | 'Professional Services' | 'Home Services' | 'Personal Services' | 'Transportation & Delivery';
@@ -162,9 +160,9 @@ function suggestTags(title: string, description: string, category: string) {
   const categoryStructure = categoryTags[category as keyof typeof categoryTags];
   if (!categoryStructure?.tags) return [];
 
-  let suggestedTags = new Set<string>();
-  let relevanceScores = new Map<string, number>();
-  let categoryScores = new Map<CategoryGroup, number>();
+  const suggestedTags = new Set<string>();
+  const relevanceScores = new Map<string, number>();
+  const categoryScores = new Map<CategoryGroup, number>();
 
   // Calculate category relevance using semantic similarity
   Object.entries(categoryStructure.tags).forEach(([category, tags]) => {
@@ -179,7 +177,7 @@ function suggestTags(title: string, description: string, category: string) {
   });
 
   // Find the most relevant category
-  let mostRelevantCategory = Array.from(categoryScores.entries())
+  const mostRelevantCategory = Array.from(categoryScores.entries())
     .sort((a, b) => b[1] - a[1])[0]?.[0];
 
   if (mostRelevantCategory) {
@@ -286,8 +284,12 @@ export const GET = withApiErrorHandler(async (request: NextRequest) => {
       );
     }
     
-    throw ErrorFactory.system('Search endpoint not implemented')
+    const filters = parseSearchQuery(request.nextUrl.searchParams);
+    return NextResponse.json(await searchListings(filters));
   } catch (error) {
+    if (error instanceof SearchValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     log('error', 'search_error', { 
       error: error instanceof Error ? error.message : 'Unknown error',
       ip: request.headers.get('x-forwarded-for') 

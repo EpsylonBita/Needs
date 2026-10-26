@@ -1,202 +1,107 @@
-"use client"
+'use client'
 
-import { useState } from "react"
+import { useLayoutEffect, useRef, useState } from 'react'
+import Image from 'next/image'
+import { ImageIcon, Loader2, X } from 'lucide-react'
 
-import Image from "next/image"
-import { useRouter } from "next/navigation"
-
-import { ImageIcon, X } from "lucide-react"
-import { toast } from "sonner"
-
-import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { useAuth } from "@/contexts/auth-context"
-import { profileService } from "@/lib/services/profile-service"
-import { cn } from "@/lib/utils"
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useAuth } from '@/contexts/auth-context'
+import { useI18n } from '@/contexts/i18n-context'
+import { profileService } from '@/lib/services/profile-service'
+import { profileFormCopy, profileFormError, profilePhotoTypes } from './profile-form-copy'
 
 interface UploadPhotoDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onUpload: (url: string) => void
-  type: "avatar" | "cover"
+  onUpload: (url: string) => Promise<void> | void
+  type: 'avatar' | 'cover'
   currentImage?: string | null
 }
 
-export function UploadPhotoDialog({ open, onOpenChange, onUpload, type, currentImage }: UploadPhotoDialogProps) {
-  const [preview, setPreview] = useState<string | null>(null)
-  const [isDragging, setIsDragging] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [isUploading, setIsUploading] = useState(false)
+export function UploadPhotoDialog(props: UploadPhotoDialogProps) {
+  // Each opening starts a fresh selection; a failed save keeps this form mounted.
+  return props.open ? <PhotoUploadForm {...props} /> : null
+}
+
+function PhotoUploadForm({ onOpenChange, onUpload, type, currentImage }: UploadPhotoDialogProps) {
   const { user } = useAuth()
-  const router = useRouter()
+  const openedUserId = useRef(user?.id)
+  const currentUserId = useRef(user?.id)
+  useLayoutEffect(() => {
+    currentUserId.current = user?.id
+    return () => { currentUserId.current = undefined }
+  }, [user?.id])
+  const { locale } = useI18n()
+  const copy = profileFormCopy[locale === 'el' ? 'el' : 'en']
+  const [file, setFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<string | null>(null)
+  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const readVersion = useRef(0)
+  const input = useRef<HTMLInputElement>(null)
 
-  const handleFile = (file: File) => {
-    setError(null)
-    
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      setError('Please upload an image file')
+  function selectFile(selected?: File) {
+    if (!selected || busy) return
+    const version = ++readVersion.current
+    setError('')
+    setFile(null)
+    setPreview(null)
+    setUploadedUrl(null)
+    if (!profilePhotoTypes.includes(selected.type) || selected.size > 5 * 1024 * 1024) {
+      setError(copy.invalidImage)
       return
     }
-
-    // Validate file size (5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      setError('Image must be less than 5MB')
-      return
-    }
-
     const reader = new FileReader()
-    reader.onload = (e) => {
-      const result = e.target?.result as string
-      setPreview(result)
+    reader.onload = () => {
+      if (version !== readVersion.current) return
+      setFile(selected)
+      setPreview(String(reader.result))
     }
-    reader.readAsDataURL(file)
+    reader.onerror = () => { if (version === readVersion.current) setError(copy.imageReadError) }
+    reader.readAsDataURL(selected)
   }
 
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    setIsDragging(false)
-    const file = e.dataTransfer.files[0]
-    if (file) handleFile(file)
-  }
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) handleFile(file)
-  }
-
-  const handleSave = async () => {
-    if (!preview) return
-    
-    if (!user) {
-      toast.error('Please log in to upload photos')
-      router.push('/login')
-      return
-    }
-
+  async function save() {
+    if (!file || busy) return
+    if (!user) { setError(copy.signIn); return }
+    setBusy(true)
+    setError('')
     try {
-      setIsUploading(true)
-      // Convert base64 to File object
-      const byteString = atob(preview.split(',')[1])
-      const mime = preview.split(',')[0].split(':')[1].split(';')[0]
-      const ab = new ArrayBuffer(byteString.length)
-      const ia = new Uint8Array(ab)
-      for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i)
-      const blob = new Blob([ab], { type: mime })
-      const file = new File([blob], `${type}-photo.${mime.split('/')[1]}`, { type: mime })
-
-      // Upload the file
-      const result = await profileService.uploadPhoto(file, type)
-      
-      // Update the UI with the new image URL
-      onUpload(result.url)
+      const expectedUserId = openedUserId.current
+      if (!expectedUserId || currentUserId.current !== expectedUserId) throw new Error('Your session changed. Please try again.')
+      // Reuse an uploaded file when only the profile save needs retrying.
+      const url = uploadedUrl || (await profileService.uploadPhoto(file, type, expectedUserId)).url
+      if (currentUserId.current !== expectedUserId) throw new Error('Your session changed. Please try again.')
+      setUploadedUrl(url)
+      await onUpload(url)
+      if (currentUserId.current !== expectedUserId) throw new Error('Your session changed. Please try again.')
+      // The profile persistence owner provides success feedback once.
       onOpenChange(false)
-      toast.success(`${type === 'avatar' ? 'Profile photo' : 'Cover image'} updated successfully`)
-    } catch (err: unknown) {
-      console.error('Upload error:', err)
-      const e = err as { message?: string; response?: { status?: number } } | Error
-      if ((e as { response?: { status?: number } })?.response?.status === 401) {
-        toast.error('Your session has expired. Please log in again')
-        router.push('/login')
-      } else {
-        const errorMessage = (e as { message?: string })?.message || `Failed to upload ${type === 'avatar' ? 'profile photo' : 'cover image'}`
-        toast.error(errorMessage)
-        setError(errorMessage)
-      }
-    } finally {
-      setIsUploading(false)
-    }
+    } catch (failure) {
+      setError(profileFormError(failure, locale, copy.photoError))
+    } finally { setBusy(false) }
   }
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle>Upload {type === "avatar" ? "Profile Photo" : "Cover Image"}</DialogTitle>
-          <DialogDescription>
-            Choose an image to upload. The image must be less than 5MB.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-4 py-4">
-          <div
-            className={cn(
-              "group relative flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed p-6 transition-colors",
-              isDragging ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-blue-400",
-              type === "avatar" && "aspect-square",
-              type === "cover" && "aspect-[3/1]"
-            )}
-            onDragOver={(e) => {
-              e.preventDefault()
-              setIsDragging(true)
-            }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={handleDrop}
-          >
-            <input
-              type="file"
-              accept="image/*"
-              className="absolute inset-0 cursor-pointer opacity-0"
-              onChange={handleChange}
-              aria-label={`Upload ${type === "avatar" ? "profile" : "cover"} photo`}
-              title={`Choose ${type === "avatar" ? "profile" : "cover"} photo`}
-            />
-            
-            {preview || currentImage ? (
-              <div className="relative h-full w-full">
-                <Image
-                  src={preview || currentImage || ""}
-                  alt="Preview"
-                  fill
-                  sizes="(max-width: 640px) 90vw, 425px"
-                  className={cn(
-                    "object-cover",
-                    type === "avatar" && "rounded-full"
-                  )}
-                />
-                <Button
-                  size="icon"
-                  variant="destructive"
-                  className="absolute -right-2 -top-2 h-6 w-6 p-0"
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    setPreview(null)
-                  }}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            ) : (
-              <>
-                <div className="rounded-full bg-blue-50 p-4">
-                  <ImageIcon className="h-8 w-8 text-blue-500" />
-                </div>
-                <div className="text-center">
-                  <p className="text-sm font-medium">Drop your image here or click to browse</p>
-                  <p className="text-xs text-gray-500">Supports JPG, PNG, GIF (Max 5MB)</p>
-                </div>
-              </>
-            )}
-          </div>
-
-          {error && (
-            <p className="text-sm text-red-500">{error}</p>
-          )}
+  return <Dialog open onOpenChange={next => { if (!busy) onOpenChange(next) }}>
+    <DialogContent closeLabel={copy.close} closeDisabled={busy} className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[440px] overflow-y-auto rounded-2xl p-5 sm:rounded-2xl sm:p-6">
+      <DialogHeader className="pr-8 text-left"><DialogTitle className="text-xl">{type === 'avatar' ? copy.avatarTitle : copy.coverTitle}</DialogTitle><DialogDescription>{copy.imageHint}</DialogDescription></DialogHeader>
+      <div aria-busy={busy} className="space-y-4">
+        <label onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); selectFile(event.dataTransfer.files[0]) }} className="relative flex min-h-48 cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/30 p-4 focus-within:ring-2 focus-within:ring-ring">
+          <input ref={input} type="file" accept={profilePhotoTypes.join(',')} disabled={busy} aria-label={type === 'avatar' ? copy.uploadAvatar : copy.uploadCover} onChange={event => selectFile(event.target.files?.[0])} className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0 disabled:cursor-wait" />
+          {preview || currentImage ? <span className={`relative block w-full overflow-hidden ${type === 'avatar' ? 'aspect-square max-w-48 rounded-full' : 'aspect-[3/1] rounded-lg'}`}>
+            <Image src={preview || currentImage || ''} alt={copy.preview} fill sizes="(max-width: 480px) 80vw, 380px" className="object-cover" />
+          </span> : <ImageIcon className="h-10 w-10 text-primary" aria-hidden="true" />}
+          <span className="text-center text-sm text-muted-foreground">{copy.chooseImage}</span>
+        </label>
+        {file && <Button type="button" variant="ghost" disabled={busy} className="min-h-11 rounded-xl" onClick={() => { ++readVersion.current; setFile(null); setPreview(null); setUploadedUrl(null); setError(''); if (input.current) input.current.value = '' }}><X className="mr-2 h-4 w-4" aria-hidden="true" />{copy.removeSelection}</Button>}
+        {error && <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm leading-relaxed text-destructive">{error}</p>}
+        <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
+          <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)} className="min-h-11 rounded-xl">{copy.cancel}</Button>
+          <Button disabled={!file || busy} onClick={() => { void save() }} className="min-h-11 rounded-xl">{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}{busy ? copy.saving : copy.save}</Button>
         </div>
-
-        <div className="flex justify-end gap-3">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button 
-            onClick={handleSave} 
-            disabled={!preview || isUploading}
-          >
-            {isUploading ? 'Uploading...' : 'Save Changes'}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
+      </div>
+    </DialogContent>
+  </Dialog>
 }

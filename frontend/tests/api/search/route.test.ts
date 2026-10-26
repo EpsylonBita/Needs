@@ -10,12 +10,12 @@ vi.mock('@/lib/utils/rate-limit-enhanced', () => ({
 vi.mock('@/lib/utils/logger', () => ({ log: vi.fn() }))
 
 describe('Search API', () => {
-  it('GET returns not implemented', async () => {
-    const req = new NextRequest('http://localhost/api/search', { method: 'GET' }) as any
+  it('GET validates filters before querying the database', async () => {
+    const req = new NextRequest('http://localhost/api/search?category=Unknown', { method: 'GET' }) as any
     const res = await GET(req)
     const data = await res.json()
-    expect(res.status).toBe(501)
-    expect(data.error).toBe('Search endpoint not implemented')
+    expect(res.status).toBe(400)
+    expect(data.error).toBe('Invalid category')
     expect(res.headers.get('X-Request-Id')).toBeTruthy()
   })
 
@@ -27,5 +27,12 @@ describe('Search API', () => {
     expect(data.error).toBe('Title or description is required')
     expect(res.headers.get('X-Request-Id')).toBeTruthy()
   })
+
+  it('preserves item tag suggestions from the targeted NLP modules', async () => {
+    const req = new NextRequest('http://localhost/api/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Brand new Apple laptop', description: 'Selling my laptop with charger', category: 'Items' }) });
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    expect((await res.json()).suggestions).toEqual(expect.arrayContaining(['apple', 'laptop', 'charger', 'brand new', 'for sale']));
+  });
 })
 

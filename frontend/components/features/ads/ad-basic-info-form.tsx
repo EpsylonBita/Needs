@@ -17,14 +17,14 @@ export function AdBasicInfoForm({ register, errors }: AdBasicInfoFormProps) {
   return (
     <div className="space-y-6">
       <div>
-        <Label htmlFor="title" className="text-base font-semibold text-blue-600 dark:text-blue-400">
+        <Label htmlFor="title" className="text-base font-semibold text-primary">
           {t('ad.title','Title')}
         </Label>
         <Input
           id="title"
           {...register("title")}
           placeholder={t('ad.title.placeholder','E.g., Selling a gently used iPhone 13')}
-          className="mt-2 bg-white dark:bg-gray-950 border-0 ring-1 ring-blue-200/50 dark:ring-blue-900/30 focus:ring-2 focus:ring-blue-500 focus:border-0 placeholder-gray-400 focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] dark:focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="mt-2 bg-card text-card-foreground border-0 ring-1 ring-border focus:ring-2 focus:ring-blue-500 focus:border-0 placeholder:text-muted-foreground focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] dark:focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         />
         {errors?.title && (
           <p className="mt-2 text-sm text-red-500">{errors.title.message}</p>
@@ -32,14 +32,14 @@ export function AdBasicInfoForm({ register, errors }: AdBasicInfoFormProps) {
       </div>
 
       <div>
-        <Label htmlFor="description" className="text-base font-semibold text-blue-600 dark:text-blue-400">
+        <Label htmlFor="description" className="text-base font-semibold text-primary">
           {t('ad.description','Description')}
         </Label>
         <Textarea
           id="description"
           {...register("description")}
           placeholder={t('ad.description.placeholder','Provide detailed information about your advertisement')}
-          className="mt-2 h-32 bg-white dark:bg-gray-950 border-0 ring-1 ring-blue-200/50 dark:ring-blue-900/30 focus:ring-2 focus:ring-blue-500 focus:border-0 resize-none placeholder-gray-400 focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] dark:focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="mt-2 h-32 bg-card text-card-foreground border-0 ring-1 ring-border focus:ring-2 focus:ring-blue-500 focus:border-0 resize-none placeholder:text-muted-foreground focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] dark:focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         />
         {errors?.description && (
           <p className="mt-2 text-sm text-red-500">{errors.description.message}</p>
@@ -48,21 +48,21 @@ export function AdBasicInfoForm({ register, errors }: AdBasicInfoFormProps) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <Label htmlFor="price" className="text-base font-semibold text-blue-600 dark:text-blue-400">
+          <Label htmlFor="price" className="text-base font-semibold text-primary">
             {t('ad.price.set','Set Price')}
           </Label>
           <Input
             id="price"
             {...register("price")}
             placeholder={t('ad.price.placeholder','Enter price (e.g., 300€)')}
-            className="mt-2 bg-white dark:bg-gray-950 border-0 ring-1 ring-blue-200/50 dark:ring-blue-900/30 focus:ring-2 focus:ring-blue-500 focus:border-0 placeholder-gray-400 focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] dark:focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="mt-2 bg-card text-card-foreground border-0 ring-1 ring-border focus:ring-2 focus:ring-blue-500 focus:border-0 placeholder:text-muted-foreground focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] dark:focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           />
           {errors?.price && (
             <p className="mt-2 text-sm text-red-500">{errors.price.message}</p>
           )}
         </div>
         <div>
-          <Label htmlFor="contactNumber" className="text-base font-semibold text-blue-600 dark:text-blue-400">
+          <Label htmlFor="contactNumber" className="text-base font-semibold text-primary">
             {t('ad.contactNumber','Contact Number')}
           </Label>
           <Input
@@ -70,7 +70,7 @@ export function AdBasicInfoForm({ register, errors }: AdBasicInfoFormProps) {
             {...register("contactNumber")}
             placeholder="+1 (555) 000-0000"
             type="tel"
-            className="mt-2 bg-white dark:bg-gray-950 border-0 ring-1 ring-blue-200/50 dark:ring-blue-900/30 focus:ring-2 focus:ring-blue-500 focus:border-0 placeholder-gray-400 focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] dark:focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="mt-2 bg-card text-card-foreground border-0 ring-1 ring-border focus:ring-2 focus:ring-blue-500 focus:border-0 placeholder:text-muted-foreground focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] dark:focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           />
           {errors?.contactNumber && (
             <p className="mt-2 text-sm text-red-500">{errors.contactNumber.message}</p>

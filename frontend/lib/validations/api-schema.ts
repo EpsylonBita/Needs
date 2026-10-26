@@ -29,7 +29,7 @@ export const paginationParamsSchema = z.object({
 // Search params schema
 export const searchParamsSchema = paginationParamsSchema.extend({
   query: z.string().optional(),
-  filters: z.record(z.unknown()).optional(),
+  filters: z.record(z.string(), z.unknown()).optional(),
   near: z.object({
     lat: z.number().min(-90).max(90),
     lng: z.number().min(-180).max(180),
@@ -89,7 +89,7 @@ export function validateApiResponse<T>(
     return { success: true, data: parsedData.data as T };
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return { success: false, error: error.errors.map(e => e.message).join(', ') };
+      return { success: false, error: error.issues.map(e => e.message).join(', ') };
     }
     return { success: false, error: 'Invalid response data' };
   }

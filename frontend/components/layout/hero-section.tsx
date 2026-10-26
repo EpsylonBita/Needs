@@ -1,188 +1,98 @@
-"use client";
+'use client';
+import { useEffect, useState, type FormEvent } from 'react';
+import Image from 'next/image';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { Search, Tag, Wrench, Pause, Play, MapPin } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { Button } from '@/components/ui/button';
+import { useI18n } from '@/contexts/i18n-context';
 
-import React, { useEffect, useState } from 'react';
+type MessagePhase = 'typing' | 'message' | 'leaving' | 'gap';
+const phaseDuration: Record<MessagePhase, number> = { typing: 1400, message: 3600, leaving: 280, gap: 180 };
+const nextPhase: Record<MessagePhase, MessagePhase> = { typing: 'message', message: 'leaving', leaving: 'gap', gap: 'typing' };
 
-import Image from "next/image";
-
-import { AnimatePresence, motion } from "framer-motion";
-import { Plus } from "lucide-react";
-
-import { Button } from "@/components/ui/button";
-import { useAuth } from "@/contexts/auth-context";
-import { useI18n } from "@/contexts/i18n-context";
-
-import { CreateAdDialog } from "../ads/create-ad-dialog";
-import { LocationAd } from "../ads/location-ad";
-
-function usePhrases() {
-  const { t } = useI18n();
-  return [
-    t("hero.phrase.buy", "Buy what you"),
-    t("hero.phrase.sell", "Sell what you"),
-    t("hero.phrase.help", "Help who you"),
-    t("hero.phrase.find", "Find what you"),
-  ];
-}
-
-/**
- * HeroSection Component
- *
- * A prominent section on the homepage, featuring animated phrases,
- * a background image, call-to-action buttons, and key statistics.
- */
 export function HeroSection() {
-  const [currentPhraseIndex, setCurrentPhraseIndex] = useState(0);
-  const { user } = useAuth();
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const phrases = usePhrases();
   const { t } = useI18n();
-
-  // Effect to cycle through phrases for animation
+  const [query, setQuery] = useState('');
+  const router = useRouter();
+  const reduceMotion = useReducedMotion();
+  const [paused, setPaused] = useState(false);
+  const [cycle, setCycle] = useState<{ index: number; phase: MessagePhase }>({ index: 0, phase: 'typing' });
+  const [hidden, setHidden] = useState(false);
+  const stopMotion = reduceMotion || paused || hidden;
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentPhraseIndex((prev) => (prev + 1) % phrases.length);
-    }, 3000);
-
-    return () => clearInterval(interval); // Cleanup interval on component unmount
-  }, [phrases.length]);
-
-
-  return (
-    <section className="relative w-full h-screen overflow-hidden pt-[72px]">
-      {/* Background Image */}
-      <div className="absolute inset-0 z-0 w-full h-full">
-        <Image
-          src="/athens.jpg"
-          alt="Athens cityscape with Acropolis"
-          fill
-          priority={true}
-          className="object-cover"
-          sizes="(max-width: 768px) 100vw,
-                 (max-width: 1200px) 100vw,
-                 100vw"
-          quality={100}
-          placeholder="blur"
-          blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDABQODxIPDRQSEBIXFRQdHx0fHRsdHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR3/2wBDAR0XFyAeIRshGxsdIR0hHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR3/wAARCAAIAAoDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAb/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
-        />
-        <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
+    const syncVisibility = () => setHidden(document.hidden);
+    syncVisibility();
+    document.addEventListener('visibilitychange', syncVisibility);
+    return () => document.removeEventListener('visibilitychange', syncVisibility);
+  }, []);
+  useEffect(() => {
+    if (stopMotion) return;
+    const timeout = setTimeout(() => {
+      setCycle(previous => ({
+        index: previous.phase === 'gap' ? (previous.index + 1) % 4 : previous.index,
+        phase: nextPhase[previous.phase],
+      }));
+    }, phaseDuration[cycle.phase]);
+    return () => clearTimeout(timeout);
+  }, [stopMotion, cycle]);
+  const examples = [
+    { place: t('modern.demo.plaka', 'Plaka'), title: t('modern.demo.guitar', 'Acoustic guitar'), price: '85 €' },
+    { place: t('modern.demo.koukaki', 'Koukaki'), title: t('modern.demo.yoga', 'Yoga in the neighborhood'), price: '15 €' },
+    { place: t('modern.demo.pangrati', 'Pangrati'), title: t('modern.demo.bike', 'A bicycle for the city'), price: '120 €' },
+    { place: t('modern.demo.thiseio', 'Thiseio'), title: t('modern.demo.plants', 'Plants looking for a home'), price: t('modern.demo.free', 'Free') },
+  ];
+  const example = examples[cycle.index];
+  const phase = reduceMotion ? 'message' : cycle.phase;
+  const phrases = [t('modern.hero.title'), t('modern.hero.sell', 'Give things a new life.'), t('modern.hero.help', 'Share what you can do.'), t('modern.hero.title')];
+  function search(event: FormEvent) {
+    event.preventDefault();
+    const params = new URLSearchParams();
+    if (query.trim()) params.set('q', query.trim());
+    router.push('/search' + (params.size ? '?' + params : ''));
+  }
+  return <section className="needs-city-hero" aria-labelledby="home-title">
+    <Image src="/athens.jpg" alt={t('modern.hero.imageAlt', 'Athens, the Acropolis and the sea')} fill preload sizes="100vw" className="needs-city-image object-cover" />
+    <div className="needs-city-shade" />
+    <div className="needs-city-examples" aria-hidden="true" data-paused={Boolean(stopMotion)} data-reduced-motion={Boolean(reduceMotion)}>
+      {phase !== 'gap' && <div key={cycle.index} className={'needs-city-example needs-city-example-' + cycle.index} data-phase={phase}>
+        <motion.div className={'needs-city-bubble' + (phase === 'typing' ? ' is-typing' : '')}
+          initial={reduceMotion ? false : { opacity: 0, y: 8, scale: .96 }}
+          animate={phase === 'leaving' ? { opacity: 0, y: -6, scale: .98 } : { opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: reduceMotion ? 0 : .28, ease: 'easeOut' }}>
+          {phase === 'typing' ? <span className="needs-city-typing"><i /><i /><i /></span> :
+            <div className="needs-city-message">
+              <div className="needs-city-message-meta"><span><MapPin size={12} />{example.place}</span><span>{example.price}</span></div>
+              <p>{example.title}</p>
+            </div>}
+        </motion.div>
+      </div>}
+    </div>
+    <div className="needs-city-copy">
+      <h1 id="home-title" className="sr-only">{t('modern.hero.title')} {t('modern.hero.accent')}</h1>
+      <div className="needs-city-heading" aria-hidden="true"><div className="needs-city-phrase"><AnimatePresence mode="wait" initial={false}>
+        <motion.span key={reduceMotion ? 'static' : cycle.index} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -14 }} transition={{ duration: reduceMotion ? 0 : .3 }}>{reduceMotion ? phrases[0] : phrases[cycle.index]}</motion.span>
+      </AnimatePresence></div><span className="needs-city-accent">{t('modern.hero.accent')}</span></div>
+      <p>{t('modern.hero.description', 'Items and services from people around you.')}</p>
+    </div>
+    <div className="needs-city-search">
+      <form onSubmit={search} role="search" className="needs-hero-search">
+        <Search aria-hidden="true" className="h-5 w-5 shrink-0 text-muted-foreground" />
+        <label className="sr-only" htmlFor="home-search">{t('search.inputPlaceholder', 'What are you looking for?')}</label>
+        <input id="home-search" type="search" value={query} onChange={event => setQuery(event.target.value)}
+          placeholder={t('search.inputPlaceholder', 'What are you looking for?')} maxLength={200} />
+        <Button type="submit">{t('search.header', 'Search')}</Button>
+      </form>
+      <div className="needs-hero-categories">
+        <Link href="/items"><Tag aria-hidden="true" className="h-5 w-5" />{t('navbar.items', 'Items')}</Link>
+        <Link href="/services"><Wrench aria-hidden="true" className="h-5 w-5" />{t('navbar.services', 'Services')}</Link>
       </div>
-      
-      {/* Location-based Ads */}
-      <LocationAd
-        title="Cozy Apartment near Acropolis"
-        description="Perfect location with stunning views"
-        price="€85/night"
-        position={{ top: "35%", left: "3%" }}
-        delay={1000}
-      />
-      <LocationAd
-        title="Local Greek Restaurant"
-        description="Traditional cuisine & atmosphere"
-        price="55€"
-        position={{ top: "30%", left: "80%" }}
-        delay={2500}
-      />
-      <LocationAd
-        title="Yoga Studio"
-        description="Morning classes with city views"
-        price="€15"
-        position={{ top: "80%", left: "40%" }}
-        delay={4000}
-      />
-      <LocationAd
-        title="Art Gallery Space"
-        description="Contemporary Greek artists"
-        price="Free Entry"
-        position={{ top: "55%", left: "70%" }}
-        delay={5500}
-      />
-      
-      {/* Hero Content */}
-      <div className="container relative z-10 h-full flex items-center justify-center">
-        <div className="flex flex-col items-center space-y-12 text-center">
-          {/* Animated Phrase and Description */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="space-y-8"
-          >
-            <div className="relative h-[160px] flex items-center justify-center">
-              <AnimatePresence mode="wait">
-                <motion.span
-                  key={currentPhraseIndex}
-                  initial={{ opacity: 0, y: 20, filter: "blur(10px)" }}
-                  animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                  exit={{ opacity: 0, y: -20, filter: "blur(10px)" }}
-                  transition={{
-                    duration: 0.6,
-                    ease: [0.43, 0.13, 0.23, 0.96]
-                  }}
-                  className="text-4xl font-bold tracking-tighter sm:text-5xl md:text-6xl lg:text-7xl/none inline-block mr-4 text-white"
-                >
-                  {phrases[currentPhraseIndex]}
-                </motion.span>
-              </AnimatePresence>
-              <span className="text-4xl font-bold tracking-tighter sm:text-5xl md:text-6xl lg:text-7xl/none text-blue-400 inline-block animate-pulse-subtle glow-md">
-                need
-              </span>
-            </div>
-            <p className="mx-auto max-w-[800px] text-gray-200 text-xl md:text-2xl font-light">
-              {t("hero.tagline")}
-            </p>
-          </motion.div>
-
-          {/* Call-to-Action Button */}
-          {user && (
-            <>
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.2 }}
-                className="relative"
-              >
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600 to-blue-400 rounded-full blur opacity-75 group-hover:opacity-100 transition duration-1000 group-hover:duration-200 animate-tilt"></div>
-                <Button 
-                  size="default"
-                  className="relative rounded-full w-16 h-16 bg-gradient-to-b from-blue-600 via-blue-500 to-blue-400 hover:from-blue-500 hover:via-blue-400 hover:to-blue-300 shadow-xl shadow-blue-500/25 hover:shadow-blue-500/50 hover:scale-110 transition-all duration-300 group"
-                  onClick={() => setIsCreateDialogOpen(true)}
-                  aria-label={t('ad.create.aria','Create new advertisement')}
-                >
-                  <Plus className="h-8 w-8 text-white group-hover:rotate-180 transition-transform duration-300" />
-                  <span className="sr-only">{t('ad.create.aria','Create new advertisement')}</span>
-                </Button>
-              </motion.div>
-              <CreateAdDialog 
-                open={isCreateDialogOpen}
-                onOpenChange={setIsCreateDialogOpen}
-              />
-            </>
-          )}
-
-          {/* Statistics Section */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.4 }}
-            className="mt-8"
-          >
-            <div className="flex items-center justify-center space-x-4 text-sm text-white">
-              <div className="flex items-center">
-                <div className="h-2 w-2 rounded-full bg-green-400 mr-2" />
-                <span>{t("stats.activeUsers")}</span>
-              </div>
-              <div className="flex items-center">
-                <div className="h-2 w-2 rounded-full bg-blue-400 mr-2" />
-                <span>{t("stats.communities")}</span>
-              </div>
-              <div className="flex items-center">
-                <div className="h-2 w-2 rounded-full bg-purple-400 mr-2" />
-                <span>{t("stats.support")}</span>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      </div>
-    </section>
-  );
+    </div>
+    <div className="needs-city-caption"><span>{t('modern.demo.caption', 'Illustrative listings around Athens')}</span>
+      {!reduceMotion && <button type="button" aria-pressed={paused} onClick={() => setPaused(value => !value)} aria-label={paused ? t('modern.demo.play', 'Play animations') : t('modern.demo.pause', 'Pause animations')}>
+        {paused ? <Play size={16} aria-hidden="true" /> : <Pause size={16} aria-hidden="true" />}
+      </button>}
+    </div>
+  </section>;
 }

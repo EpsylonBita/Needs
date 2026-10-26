@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
+import { ClientCategoriesPage } from '@/components/categories/client-categories-page';
 import { getCategories } from '@/lib/api/api';
 import { LoadingCategories } from './loading';
-import { ClientCategoriesPage } from '@/components/categories/client-categories-page';
 
 // Define metadata
 export const metadata = {

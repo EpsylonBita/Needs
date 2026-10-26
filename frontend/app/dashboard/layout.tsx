@@ -1,4 +1,5 @@
 import { Metadata } from "next";
+import { DashboardGuard } from '@/components/auth/dashboard-guard';
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -14,7 +15,7 @@ interface DashboardLayoutProps {
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
     <div className="flex min-h-screen flex-col">
-      <main className="flex-1">{children}</main>
+      <div className="flex-1"><DashboardGuard>{children}</DashboardGuard></div>
     </div>
   );
 }

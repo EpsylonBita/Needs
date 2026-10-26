@@ -1,0 +1,28 @@
+export const profileUiCopy = {
+  en: {
+    member: 'Needs member', joined: 'Member since', edit: 'Edit profile', publicProfile: 'View public profile',
+    photos: 'Profile options', avatar: 'Change profile photo', cover: 'Change cover photo', addCover: 'Add cover photo',
+    copyLink: 'Copy profile link', copied: 'Profile link copied', copyFailed: 'Could not copy the link. Open your public profile to copy its address.',
+    profileError: 'Your profile could not be loaded.', profileRetry: 'Try again',
+    quickAccess: 'Quick access', chatsHint: 'Continue a conversation', ordersHint: 'Follow your agreements', paymentsHint: 'View your payment history',
+    milestonesHint: 'Keep track of each stage', notificationsHint: 'See account updates',
+    firstListing: 'Your next connection starts here', firstListingHint: 'Offer something, ask for what you need, or explore your neighbourhood.', browse: 'Explore listings',
+    allListings: 'All listings', noReviewsHint: 'Reviews from completed exchanges will appear here.',
+    personalDetails: 'Personal details', personalHint: 'Choose how you appear to other members.', name: 'Name', title: 'Professional title', location: 'Location', bio: 'About you', empty: 'Not added',
+    account: 'Account & security', accountHint: 'Manage the email and password you use to sign in.', email: 'Sign-in email', emailHint: 'Email changes require confirmation. You can change your address in Edit profile.', password: 'Password', passwordHint: 'Request a secure link to choose a new password.', resetPassword: 'Reset password',
+    preferences: 'Preferences', language: 'Language', appearance: 'Appearance', notifications: 'Notifications', notificationHint: 'View updates and manage which messages you have read.', openNotifications: 'Open notifications',
+  },
+  el: {
+    member: 'Μέλος του NEEDS', joined: 'Μέλος από', edit: 'Επεξεργασία προφίλ', publicProfile: 'Δημόσιο προφίλ',
+    photos: 'Επιλογές προφίλ', avatar: 'Αλλαγή φωτογραφίας', cover: 'Αλλαγή εξωφύλλου', addCover: 'Προσθήκη εξωφύλλου',
+    copyLink: 'Αντιγραφή συνδέσμου προφίλ', copied: 'Ο σύνδεσμος αντιγράφηκε', copyFailed: 'Δεν ήταν δυνατή η αντιγραφή. Άνοιξε το δημόσιο προφίλ για να αντιγράψεις τη διεύθυνσή του.',
+    profileError: 'Δεν ήταν δυνατή η φόρτωση του προφίλ σου.', profileRetry: 'Δοκίμασε ξανά',
+    quickAccess: 'Γρήγορη πρόσβαση', chatsHint: 'Συνέχισε μια συζήτηση', ordersHint: 'Παρακολούθησε τις συμφωνίες σου', paymentsHint: 'Δες το ιστορικό πληρωμών',
+    milestonesHint: 'Δες την εξέλιξη κάθε εργασίας', notificationsHint: 'Δες τις ενημερώσεις σου',
+    firstListing: 'Η επόμενη γνωριμία ξεκινά εδώ', firstListingHint: 'Πρόσφερε κάτι, ζήτησε αυτό που χρειάζεσαι ή ανακάλυψε τη γειτονιά σου.', browse: 'Αναζήτηση αγγελιών',
+    allListings: 'Όλες οι αγγελίες', noReviewsHint: 'Εδώ θα εμφανίζονται αξιολογήσεις από ολοκληρωμένες συναλλαγές.',
+    personalDetails: 'Προσωπικά στοιχεία', personalHint: 'Επίλεξε πώς εμφανίζεσαι στα άλλα μέλη.', name: 'Όνομα', title: 'Επαγγελματικός τίτλος', location: 'Τοποθεσία', bio: 'Λίγα λόγια για σένα', empty: 'Δεν έχει προστεθεί',
+    account: 'Λογαριασμός και ασφάλεια', accountHint: 'Διαχειρίσου το email και τον κωδικό σύνδεσής σου.', email: 'Email σύνδεσης', emailHint: 'Η αλλαγή email χρειάζεται επιβεβαίωση. Μπορείς να αλλάξεις τη διεύθυνση στην Επεξεργασία προφίλ.', password: 'Κωδικός πρόσβασης', passwordHint: 'Ζήτησε έναν ασφαλή σύνδεσμο για να ορίσεις νέο κωδικό.', resetPassword: 'Επαναφορά κωδικού',
+    preferences: 'Προτιμήσεις', language: 'Γλώσσα', appearance: 'Εμφάνιση', notifications: 'Ειδοποιήσεις', notificationHint: 'Δες τις ενημερώσεις σου και σημείωσε όσα διάβασες.', openNotifications: 'Άνοιγμα ειδοποιήσεων',
+  },
+}

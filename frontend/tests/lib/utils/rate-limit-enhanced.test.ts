@@ -1,91 +1,95 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@/lib/supabase/server', () => {
-  let store: Record<string, number> = {}
-  const makeKey = (key: string, windowStart: string) => `${key}:${windowStart}`
-  return {
-    getSupabaseAdmin: () => ({
-      from: (table: string) => {
-        if (table !== 'rate_limits') throw new Error('Unexpected table')
-        return {
-          select: vi.fn(() => {
-            let k = ''
-            let w = ''
-            const api: any = {
-              eq: vi.fn((col: string, val: string) => {
-                if (col === 'key') k = val as string
-                if (col === 'window_start') w = val as string
-                return api
-              }),
-              limit: vi.fn((n: number) => {
-                const key = makeKey(k, w)
-                const count = store[key] ?? 0
-                return { data: count ? [{ count }] : [] }
-              })
-            }
-            return api
-          }),
-          insert: vi.fn(async (row: any) => {
-            const key = makeKey(row.key, row.window_start)
-            store[key] = (store[key] ?? 0) + 1
-            return { data: null, error: null }
-          }),
-          update: vi.fn(() => ({
-            eq: vi.fn((col: string, val: string) => ({
-              eq: vi.fn((col2: string, val2: string) => {
-                const key = makeKey(val as string, val2 as string)
-                store[key] = (store[key] ?? 0) + 1
-                return { data: null, error: null }
-              })
-            }))
-          })),
-          delete: vi.fn(() => ({ lt: vi.fn(() => ({ data: null, error: null })) }))
-        }
-      }
-    })
-  }
-})
+const { rpc, getAdmin } = vi.hoisted(() => ({ rpc: vi.fn(), getAdmin: vi.fn() }))
+vi.mock('@/lib/supabase/server', () => ({ getSupabaseAdmin: getAdmin }))
+vi.mock('@/lib/utils/logger', () => ({ log: vi.fn() }))
 
-import { rateLimitEnhanced, RateLimitConfigs } from '@/lib/utils/rate-limit-enhanced'
+import { rateLimitEnhanced, rateLimiter } from '@/lib/utils/rate-limit-enhanced'
+import { rateLimit } from '@/lib/utils/rate-limit'
 
-describe('rate-limit-enhanced', () => {
+const resetAt = '2026-10-26T14:00:00.000Z'
+const accepted = (remaining = 1) => ({ data: { allowed: true, remaining, reset_at: resetAt, retry_after: 0 }, error: null })
+const unavailable = { data: null, error: { message: 'database unavailable' } }
+
+describe('atomic rate limit service', () => {
   beforeEach(() => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2025-01-01T00:00:00.000Z'))
+    vi.resetAllMocks()
+    getAdmin.mockReturnValue({ rpc })
+    rpc.mockResolvedValue(accepted())
   })
 
-  it('allows within standard window and blocks on limit', async () => {
-    const ip = '1.2.3.4'
-    const key = RateLimitConfigs.PUBLIC_API.key(ip)
-    const limit = 2
-    const windowMs = 60_000
-
-    const r1 = await rateLimitEnhanced(key, limit, windowMs)
-    expect(r1.allowed).toBe(true)
-    const r2 = await rateLimitEnhanced(key, limit, windowMs)
-    expect(r2.allowed).toBe(true)
-    const r3 = await rateLimitEnhanced(key, limit, windowMs)
-    expect(r3.allowed).toBe(false)
-    expect(typeof r3.retryAfter).toBe('number')
+  it('uses the atomic database counter and its authoritative reset time', async () => {
+    const result = await rateLimitEnhanced('api:public:one', 2, 60_000)
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('consume_rate_limit', { p_key: 'api:public:one', p_limit: 2, p_window_ms: 60_000 })
+    expect(result).toEqual({ allowed: true, remaining: 1, resetAt: new Date(resetAt) })
   })
 
-  it('enforces burst limit before sustained limit', async () => {
-    const ip = '9.8.7.6'
-    const key = RateLimitConfigs.PAYMENTS.key(ip)
-    const sustainedLimit = 10
-    const sustainedWindowMs = 60_000
-    const burstLimit = 2
-    const burstWindowMs = 10_000
+  it('returns the database denial and retry time', async () => {
+    rpc.mockResolvedValue({ data: { allowed: false, remaining: 0, reset_at: resetAt, retry_after: 13 }, error: null })
+    expect(await rateLimitEnhanced('test', 2, 60_000, { message: 'Wait' })).toEqual({
+      allowed: false, remaining: 0, resetAt: new Date(resetAt), retryAfter: 13, message: 'Wait',
+    })
+  })
 
-    const b1 = await rateLimitEnhanced(key, sustainedLimit, sustainedWindowMs, { burstLimit, burstWindowMs })
-    expect(b1.allowed).toBe(true)
-    const b2 = await rateLimitEnhanced(key, sustainedLimit, sustainedWindowMs, { burstLimit, burstWindowMs })
-    expect(b2.allowed).toBe(true)
-    const b3 = await rateLimitEnhanced(key, sustainedLimit, sustainedWindowMs, { burstLimit, burstWindowMs })
-    expect(b3.allowed).toBe(false)
-    expect(b3.retryAfter).toBeGreaterThan(0)
-    vi.advanceTimersByTime(burstWindowMs)
-    const b4 = await rateLimitEnhanced(key, sustainedLimit, sustainedWindowMs, { burstLimit, burstWindowMs })
-    expect(b4.allowed).toBe(true)
+  it.each([
+    ['returned database error', () => rpc.mockResolvedValue(unavailable)],
+    ['network rejection', () => rpc.mockRejectedValue(new Error('network'))],
+    ['missing server configuration', () => getAdmin.mockImplementation(() => { throw new Error('missing credentials') })],
+  ])('fails closed on %s without a read/write fallback', async (_name, arrange) => {
+    arrange()
+    expect(await rateLimitEnhanced('payments', 2, 60_000, { failClosed: true, message: 'Try later' })).toEqual({
+      allowed: false, remaining: 0, retryAfter: 60, message: 'Try later',
+    })
+  })
+
+  it.each([null, {}, { allowed: true }, { allowed: true, remaining: 2, reset_at: resetAt, retry_after: 0 },
+    { allowed: true, remaining: 1, reset_at: 'invalid', retry_after: 0 },
+    { allowed: false, remaining: 0, reset_at: resetAt, retry_after: 0 },
+    { allowed: true, remaining: 1, reset_at: resetAt, retry_after: 1 },
+  ])('rejects malformed RPC responses: %j', async (data) => {
+    rpc.mockResolvedValue({ data, error: null })
+    expect(await rateLimitEnhanced('test', 2, 60_000, { failClosed: true })).toMatchObject({ allowed: false, retryAfter: 60 })
+  })
+
+  it('retains the fail-open policy for public callers on a database outage', async () => {
+    rpc.mockResolvedValue(unavailable)
+    expect(await rateLimitEnhanced('search', 2, 60_000)).toEqual({ allowed: true, remaining: 2 })
+  })
+
+  it('fails closed when the burst counter is unavailable and does not consume the sustained counter', async () => {
+    rpc.mockResolvedValue(unavailable)
+    expect(await rateLimitEnhanced('payments', 10, 60_000, { burstLimit: 2, burstWindowMs: 10_000, failClosed: true })).toMatchObject({ allowed: false, retryAfter: 60 })
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('consume_rate_limit', { p_key: 'payments:burst', p_limit: 2, p_window_ms: 10_000 })
+  })
+
+  it('fails closed when the sustained counter is unavailable after the burst check passed', async () => {
+    rpc.mockResolvedValueOnce(accepted()).mockResolvedValueOnce(unavailable)
+    expect(await rateLimitEnhanced('payments', 10, 60_000, { burstLimit: 2, burstWindowMs: 10_000, failClosed: true })).toMatchObject({ allowed: false, remaining: 0, retryAfter: 60 })
+    expect(rpc).toHaveBeenNthCalledWith(2, 'consume_rate_limit', { p_key: 'payments:sustained', p_limit: 10, p_window_ms: 60_000 })
+  })
+
+  it('combines successful burst and sustained windows', async () => {
+    rpc.mockResolvedValueOnce(accepted()).mockResolvedValueOnce({ ...accepted(7), data: { ...accepted(7).data, reset_at: '2026-10-26T15:00:00.000Z' } })
+    expect(await rateLimitEnhanced('payments', 10, 60_000, { burstLimit: 2, burstWindowMs: 10_000 })).toEqual({ allowed: true, remaining: 1, resetAt: new Date(resetAt) })
+  })
+
+  it.each([false, true])('propagates failClosed to progressive limiting (authenticated: %s)', async (isAuthenticated) => {
+    rpc.mockResolvedValue(unavailable)
+    expect(await rateLimitEnhanced('login', 2, 60_000, { isAuthenticated, failClosed: true })).toMatchObject({ allowed: false, retryAfter: 60 })
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('consume_rate_limit', { p_key: isAuthenticated ? 'login:auth' : 'login:anon', p_limit: isAuthenticated ? 10 : 2, p_window_ms: 60_000 })
+  })
+
+  it('makes the legacy administrative wrapper fail closed too', async () => {
+    rpc.mockResolvedValue(unavailable)
+    expect(await rateLimit('admin:create:one', 2, 60_000)).toEqual({ allowed: false })
+  })
+
+  it.each([
+    { key: '', limit: 2, windowMs: 1 }, { key: 'test', limit: 0, windowMs: 1 },
+    { key: 'test', limit: 2, windowMs: 0 }, { key: 'test', limit: 1.5, windowMs: 1 },
+    { key: 'test', limit: 2, windowMs: 2147483648 },
+  ])('rejects invalid counter configuration before database access: %j', async (config) => {
+    expect(await rateLimiter.limit(config)).toEqual({ allowed: false, remaining: 0 })
+    expect(rpc).not.toHaveBeenCalled()
   })
 })

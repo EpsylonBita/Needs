@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import React from 'react'
 import { CategoryTagsPicker } from '@/components/features/ads/category-tags-picker'
 
-test('selected tag renders with selected style class', () => {
+test('selected tags expose their pressed state to assistive technology', () => {
   render(
     <CategoryTagsPicker
       selectedCategory={'Items'}
@@ -16,5 +16,6 @@ test('selected tag renders with selected style class', () => {
     />
   )
   const selectedTagBtn = screen.getByRole('button', { name: /phone/i })
-  expect(selectedTagBtn).toHaveClass('bg-blue-500')
+  expect(selectedTagBtn).toHaveAttribute('aria-pressed', 'true')
+  expect(selectedTagBtn).toHaveAttribute('type', 'button')
 })

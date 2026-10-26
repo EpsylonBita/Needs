@@ -1,177 +1,43 @@
 'use client';
-
-import { useState } from 'react';
-
-import { motion } from 'framer-motion';
-
-import { Map } from '@/components/features/map/map-component';
+import { useMemo } from 'react';
+import Link from 'next/link';
+import dynamic from 'next/dynamic';
+import { ArrowRight, House, LoaderCircle } from 'lucide-react';
+import { NewListingButton } from '@/components/features/ads/new-listing-button';
+import { Button } from '@/components/ui/button';
 import { useI18n } from '@/contexts/i18n-context';
-import { supabase } from '@/lib/supabase/client'
-
-import { AdvancedSearchForm, AdvancedSearchFilters } from './advanced-search-form';
-import { SearchBar } from './search-bar';
-
-// Example results structure
-interface SearchResult {
-  id: string;
-  title: string;
-  description: string;
-  price: number;
-  location: {
-    coordinates: [number, number];
-    address: string;
-  };
-  sellerId?: string;
-  sellerRating?: number;
-}
-
-// Initial example results
-const initialResults = [
-  {
-    id: '1',
-    title: 'City Center Location',
-    description: 'Prime location in the heart of the city',
-    price: 1500,
-    location: {
-      coordinates: [23.7275, 37.9838] as [number, number],
-      address: 'Central Athens'
-    }
-  },
-  {
-    id: '2',
-    title: 'South Area Spot',
-    description: 'Peaceful southern neighborhood',
-    price: 1200,
-    location: {
-      coordinates: [23.7245, 37.9765] as [number, number],
-      address: 'South Athens'
-    }
-  }
-];
-
+import { useListingSearch } from './use-listing-search';
+const Map = dynamic(() => import('@/components/features/map/map-component').then(module => module.Map), {
+  ssr: false, loading: () => <div className="h-full animate-pulse bg-muted" />,
+});
 export function SearchHeroSection() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [results, setResults] = useState<SearchResult[]>(initialResults);
-  const [isSearching, setIsSearching] = useState(false);
-  const [isAdvancedSearchOpen, setIsAdvancedSearchOpen] = useState(false);
-  const [_advancedFilters, setAdvancedFilters] = useState<AdvancedSearchFilters | null>(null);
-  const { t } = useI18n();
-
-  const handleSearch = async () => {
-    setIsSearching(true);
-    try {
-      if (navigator.geolocation) {
-        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject)
-        })
-        const { longitude, latitude } = pos.coords
-        const { data, error } = await supabase.rpc('nearby_listings_detailed', { lon: longitude, lat: latitude, radius_m: 5000 })
-        if (error) throw error
-        let mapped: SearchResult[] = (data || []).map((l: { id: string; title: string; description: string; price: number; lon: number; lat: number; seller_id?: string }) => ({
-          id: l.id,
-          title: l.title,
-          description: l.description,
-          price: l.price,
-          location: { coordinates: [l.lon, l.lat] as [number, number], address: '' },
-          sellerId: l.seller_id,
-        }))
-        if (searchQuery) {
-          mapped = mapped.filter(r =>
-            (r.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-            (r.description || '').toLowerCase().includes(searchQuery.toLowerCase())
-          )
-        }
-        const sellerIds = Array.from(new Set(mapped.map(m => m.sellerId).filter(Boolean)))
-        if (sellerIds.length > 0) {
-          const { data: revs } = await supabase
-            .from('reviews')
-            .select('seller_id, rating')
-            .in('seller_id', sellerIds)
-          const sumBySeller: Record<string, number> = {}
-          const countBySeller: Record<string, number> = {}
-          ;(revs || []).forEach((r: { seller_id: string; rating?: number }) => {
-            const sid = r.seller_id
-            sumBySeller[sid] = (sumBySeller[sid] || 0) + Number(r.rating || 0)
-            countBySeller[sid] = (countBySeller[sid] || 0) + 1
-          })
-          mapped.forEach(m => {
-            if (m.sellerId && countBySeller[m.sellerId]) {
-              m.sellerRating = sumBySeller[m.sellerId] / countBySeller[m.sellerId]
-            }
-          })
-        }
-        setResults(mapped)
-      } else {
-        setResults(initialResults)
-      }
-    } catch (error) {
-      console.error('Error searching:', error);
-    } finally {
-      setIsSearching(false);
-    }
-  };
-
-  const handleAdvancedSearch = (filters: AdvancedSearchFilters) => {
-    setAdvancedFilters(filters);
-    handleSearch();
-  };
-
-
-  return (
-    <section className="relative w-full bg-gradient-to-b from-white to-gray-50 py-12 md:py-16 pt-[72px]">
-      <div className="container mx-auto px-4">
-        {/* Search Container */}
-        <div className="max-w-3xl mx-auto text-center space-y-8 mb-16">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="relative"
-          >
-            <div suppressHydrationWarning>
-              <SearchBar 
-                onSearch={(search) => {
-                  setSearchQuery(search);
-                  handleSearch();
-                }}
-                isSearching={isSearching}
-                onAdvancedSearch={() => setIsAdvancedSearchOpen(true)}
-              />
-            </div>
-
-            {/* Advanced Search Form */}
-            <AdvancedSearchForm
-              isOpen={isAdvancedSearchOpen}
-              onClose={() => setIsAdvancedSearchOpen(false)}
-              onApply={handleAdvancedSearch}
-            />
-          </motion.div>
-        </div>
-
-        {/* Map Container */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-          className="max-w-6xl mx-auto"
-        >
-          <div className="bg-transparent rounded-xl overflow-hidden">
-            <div className="p-4 border-b bg-white/10 backdrop-blur-md border-white/20 shadow-lg">
-              <h3 className="text-lg font-semibold text-gray-900">
-                {t("search.listingsFound", `${results.length} Listings Found`).replace("{count}", String(results.length))}
-              </h3>
-              <p className="text-sm text-gray-500">
-                {results.length > 0 
-                  ? t('search.clickMarkers')
-                  : t('search.noListings')}
-              </p>
-            </div>
-            <div className="h-[400px] bg-transparent">
-              <Map results={results} live />
-            </div>
-          </div>
-        </motion.div>
+  const { t, formatCurrency } = useI18n();
+  const { data, isLoading, error, retry } = useListingSearch('limit=50');
+  const listings = data?.listings || [];
+  const results = useMemo(() => (data?.listings || []).flatMap(listing => listing.coordinates ? [{
+    id: listing.id, title: listing.title, description: listing.description, price: listing.price,
+    location: { coordinates: listing.coordinates, address: typeof listing.address === 'string' ? listing.address : listing.address?.label || '' },
+    sellerId: listing.seller_id, sellerRating: listing.sellerRating,
+    imageUrl: listing.listing_images?.find(image => image.main)?.url || listing.listing_images?.[0]?.url,
+    category: listing.main_category, subcategory: listing.sub_category,
+  }] : []), [data]);
+  return <section className="needs-discovery" aria-labelledby="discovery-title"><div className="needs-shell">
+    <div className="needs-section-heading"><h2 id="discovery-title">{t('modern.neighborhood', 'Discover your neighborhood')}</h2>
+      <Link href="/search">{t('modern.allListings', 'All listings')}<ArrowRight className="h-4 w-4" aria-hidden="true" /></Link></div>
+    <div className="needs-discovery-grid">
+      <div className="needs-discovery-content" aria-busy={isLoading}>
+        {isLoading ? <div role="status" className="needs-empty-state"><LoaderCircle className="h-7 w-7 animate-spin text-primary" aria-hidden="true" /><p>{t('search.searching', 'Searching...')}</p></div>
+          : error ? <div role="alert" className="needs-empty-state"><House className="h-10 w-10 text-muted-foreground" aria-hidden="true" /><h3>{t('modern.loadError', 'Listings are temporarily unavailable.')}</h3><Button variant="outline" onClick={retry}>{t('common.retry', 'Try again')}</Button></div>
+          : listings.length === 0 ? <div className="needs-empty-state" role="status"><House className="h-12 w-12 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
+            <h3>{t('modern.empty.title', 'Your neighborhood is waiting for its first listing.')}</h3>
+            <p>{t('modern.empty.description', 'Share something you no longer need or find a local service.')}</p>
+            <NewListingButton variant="outline" />
+          </div> : <div className="needs-latest-list">{listings.slice(0, 4).map(listing => <Link key={listing.id} href={'/listings/' + encodeURIComponent(listing.id)}>
+            <div><h3>{listing.title}</h3><p>{listing.main_category === 'Items' ? t('navbar.items', 'Items') : t('navbar.services', 'Services')}</p></div>
+            <strong>{formatCurrency(listing.price, 'EUR')}</strong><ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </Link>)}</div>}
       </div>
-    </section>
-  );
+      <div className="needs-discovery-map"><Map results={results} live={false} /></div>
+    </div>
+  </div></section>;
 }

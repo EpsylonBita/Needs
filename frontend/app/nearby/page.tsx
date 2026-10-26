@@ -1,10 +1,9 @@
+import { Suspense } from 'react';
+import { NearbyDiscovery } from '@/components/features/nearby/nearby-discovery';
+import { Skeleton } from '@/components/ui/skeleton';
+
+export const metadata = { title: 'Nearby | Needs', description: 'Find items and services near an area you choose.' };
+
 export default function NearbyPage() {
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-4">Nearby Items</h1>
-      <p className="text-muted-foreground">
-        Discover items and services available in your area.
-      </p>
-    </div>
-  );
-} 
+  return <div className="needs-shell needs-search-page"><Suspense fallback={<Skeleton className="h-80 rounded-2xl" />}><NearbyDiscovery /></Suspense></div>;
+}

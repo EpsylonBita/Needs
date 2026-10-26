@@ -44,9 +44,7 @@ export function SearchBar({
           value={searchQuery}
           onChange={(e) => {
             setSearchQuery(e.target.value);
-            if (e.target.value) {
-              handleSearch();
-            }
+            onSearch(e.target.value, '');
           }}
           onKeyDown={handleKeyDown}
           whileHover={{ scale: 1.02 }}

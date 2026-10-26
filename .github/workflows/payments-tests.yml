@@ -1,17 +1,54 @@
-name: payments-tests
+name: application-tests
 on:
   push:
   pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  payments:
+  unit-and-database:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm install --global npm@11.19.0
       - run: npm ci
-        working-directory: ./frontend
-      - run: npm run test:payments
-        working-directory: ./frontend
+      - run: npm run test:ci
+      - run: npm run test:db
+      - run: npm audit --omit=dev --audit-level=moderate
+  production-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm install --global npm@11.19.0
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      # Builds production Next.js into .next-e2e, with dummy credentials only.
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failure-evidence
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { supabaseAdmin } from '@/lib/supabase/server';
-import { userRegisterSchema, validateInput } from '@/lib/validations/security-schemas';
+import { authEmailRedirectUrl } from '@/lib/auth/email-links';
+import { withApiErrorHandler, ErrorFactory } from '@/lib/utils/error-handler';
 import { log } from '@/lib/utils/logger';
 import { rateLimitEnhanced, RateLimitConfigs } from '@/lib/utils/rate-limit-enhanced';
-import { withApiErrorHandler, ErrorFactory } from '@/lib/utils/error-handler';
+import { userRegisterSchema, validateInput } from '@/lib/validations/security-schemas';
 
 export const POST = withApiErrorHandler(async (request: NextRequest) => {
   try {
@@ -22,6 +22,7 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
       RateLimitConfigs.REGISTER.windowMs,
       {
         message: RateLimitConfigs.REGISTER.message,
+        failClosed: true,
         isAuthenticated: false // Registration attempts are always treated as anonymous
       }
     );
@@ -59,7 +60,10 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
     const { data, error } = await client.auth.signUp({
       email: validatedData.email,
       password: validatedData.password,
-      options: { data: { fullName: validatedData.fullName, phoneNumber: validatedData.phoneNumber } }
+      options: {
+        emailRedirectTo: authEmailRedirectUrl('/auth/confirm', process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin),
+        data: { fullName: validatedData.fullName, phoneNumber: validatedData.phoneNumber },
+      }
     });
     
     if (error) {
@@ -72,12 +76,8 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
     }
     
     const uid = data.user?.id
-    if (uid) {
-      await supabaseAdmin.from('profiles').upsert({ 
-        user_id: uid, 
-        display_name: validatedData.fullName 
-      }, { onConflict: 'user_id' })
-    }
+    // The authenticated profile provider creates a missing profile after email
+    // confirmation. A duplicate signup must never overwrite a saved profile.
     
     log('info', 'successful_registration', { 
       userId: uid, 
@@ -85,7 +85,7 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
       ip 
     });
     
-    return NextResponse.json({ user: data.user });
+    return NextResponse.json({ user: data.user, requiresEmailConfirmation: !data.session });
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Registration failed';

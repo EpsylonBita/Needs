@@ -1,9 +1,12 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { handlesAuthEmailUrl } from '@/lib/auth/email-links'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
 
-export const supabase: SupabaseClient = createClient(supabaseUrl || '', supabaseAnonKey || '')
+export const supabase: SupabaseClient = createClient(supabaseUrl || '', supabaseAnonKey || '', {
+  auth: { detectSessionInUrl: typeof window === 'undefined' || !handlesAuthEmailUrl(window.location.pathname) },
+})
 
 export function getSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL as string

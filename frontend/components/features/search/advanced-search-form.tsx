@@ -75,7 +75,7 @@ export function AdvancedSearchForm({ isOpen, onClose, onApply }: AdvancedSearchF
                   variant={selectedCategory === cat.id ? "default" : "outline"}
                   className="w-full justify-start"
                   onClick={() => {
-                    setSelectedCategory(cat.id);
+                    setSelectedCategory(selectedCategory === cat.id ? '' : cat.id);
                     setSelectedSubcategory('');
                   }}
                 >
@@ -97,7 +97,7 @@ export function AdvancedSearchForm({ isOpen, onClose, onApply }: AdvancedSearchF
                       key={sub}
                       variant={selectedSubcategory === sub ? "default" : "outline"}
                       className="w-full justify-start"
-                      onClick={() => setSelectedSubcategory(sub)}
+                      onClick={() => setSelectedSubcategory(selectedSubcategory === sub ? '' : sub)}
                     >
                       {t(`search.sub.${sub}`, sub)}
                     </Button>

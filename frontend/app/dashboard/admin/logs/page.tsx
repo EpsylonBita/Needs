@@ -4,28 +4,26 @@ import { useEffect, useState } from 'react'
 
 import { useRouter } from 'next/navigation'
  
-import { supabase } from '@/lib/supabase/client'
+import { adminRequest } from '../admin-request'
 
 type LogRow = { id: string; admin_email: string; listing_id: string; action: string; created_at: string }
 
 export default function AdminModerationLogsPage() {
   const [rows, setRows] = useState<LogRow[]>([])
   const [allowed, setAllowed] = useState<boolean | null>(null)
+  const [error, setError] = useState('')
   const router = useRouter()
 
   useEffect(() => {
     const run = async () => {
-      const s = await supabase.auth.getSession()
-      const at = s.data.session?.access_token || ''
-      const chk = await fetch('/api/admin/check', { headers: { ...(at ? { Authorization: `Bearer ${at}` } : {}) } })
-      if (!chk.ok) { setAllowed(false); router.push('/dashboard'); return }
-      setAllowed(true)
-      const { data } = await supabase
-        .from('moderation_logs')
-        .select('id,admin_email,listing_id,action,created_at')
-        .order('created_at', { ascending: false })
-        .limit(11)
-      setRows((data || []) as LogRow[])
+      try {
+        const data = await adminRequest<{ logs: LogRow[] }>('/api/admin/logs')
+        setAllowed(true)
+        setRows(data.logs)
+      } catch (cause) {
+        if ((cause as { status?: number }).status === 403) { setAllowed(false); router.push('/dashboard'); return }
+        setError(cause instanceof Error ? cause.message : 'Unable to load moderation logs')
+      }
     }
     run()
   }, [router])
@@ -34,6 +32,7 @@ export default function AdminModerationLogsPage() {
     <div className="container mx-auto p-4 pt-[72px]">
       <h1 className="text-2xl font-bold">Moderation Audit Logs</h1>
       {allowed === false && (<div className="mt-2">Forbidden</div>)}
+      {error && <div role="alert" className="mt-2 text-red-600">{error}</div>}
       <div className="mt-4 border rounded-md">
         <table className="w-full text-sm">
           <thead>

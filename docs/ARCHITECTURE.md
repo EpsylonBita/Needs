@@ -1,57 +1,29 @@
-# System Architecture
+# NEEDS architecture
 
-## Overview
+Updated for the 26 October 2026 local audit repairs. Deployment state is recorded separately; source changes are not evidence of a live rollout.
 
-The NEEDS platform is a marketplace application built with a modern web stack.
+## Runtime and boundaries
 
-- **Frontend**: Next.js 15 (App Router), React, Tailwind CSS, Shadcn UI.
-- **Backend**: Supabase (PostgreSQL, Auth, Realtime, Storage).
-- **Payments**: Stripe Connect (Destination Charges).
-- **Maps**: Mapbox GL.
+- Next.js 16 App Router and React 19, TypeScript, Tailwind CSS, Radix UI and React Query.
+- npm with `frontend/package-lock.json`; Node 24.21.x or newer 24.x.
+- Supabase Auth identifies accounts; `profiles.user_id` links an auth account to its application profile. Public and owner-scoped queries use the browser/anonymous client with RLS. Privileged endpoints verify the account/role before using server-only service credentials.
+- Supabase Postgres, Storage and Realtime support listings/images, conversations/messages, notifications, transactions and moderation.
+- Stripe Connect handles configured payment operations. Mapbox provides map tiles and forward/reverse geocoding. Optional Resend delivery uses the contact outbox; configuration is deferred by the owner.
 
-## Data Model (Supabase)
+## Application
 
-The core data models are defined in PostgreSQL.
+`app/` owns pages and API routes; `components/` owns rendered UI; `lib/services/` owns client-facing data contracts; `lib/utils/` owns common server guards; `supabase/migrations/` contains reviewable database changes. Legacy parallel component directories remain compatibility surfaces; follow active imports rather than folder names.
 
-### Key Tables
+New listings use optional photos first, then one description with local deterministic field extraction, editable tags, location autocomplete and optional profile-phone prefill. Uploaded files are validated before persistence. Unknown facts remain editable rather than fabricated.
 
-- **`profiles`**: User profiles (extends `auth.users`).
-- **`listings`**: Items or services for sale/request. Includes geospatial data (`location`).
-- **`listing_images`**: Images associated with listings.
-- **`chats` & `messages`**: Real-time messaging system.
-- **`payments`**: Payment records, linked to Stripe Payment Intents.
-- **`transactions`**: Financial transactions (charges, transfers, refunds).
-- **`reviews`**: User ratings and reviews.
+## Payments
 
-### Security (RLS)
+Transactions identify payer/payee from the listing request/offer direction. PaymentIntent authorization uses manual capture; completion checks precede capture and Connect transfer. This is an authorization workflow with provider limits, not an unlimited funds-holding guarantee. Webhook operations and refund reconciliation use idempotent database functions. Rate-limit counters use an atomic service-only database function; sensitive routes fail closed if it is unavailable.
 
-Row Level Security (RLS) is enforced on all public tables.
-- **Public Read**: Generally allowed for listings and profiles.
-- **Private Write**: Users can only edit their own data.
-- **Service Role**: Used by server-side route handlers for privileged actions (e.g., payment updates).
+## Operations and tests
 
-## Frontend Architecture
+`proxy.ts` applies CSP/security headers and CSRF checks. Health probes return non-success when a required dependency is unavailable. Production demo/profile stub APIs have been removed. Contact delivery retries use the existing outbox and authenticated dispatch worker.
 
-### Tech Stack
-- **Framework**: Next.js 15
-- **State Management**: TanStack Query (Server state), React Context (Auth, Theme), URL state (`nuqs`).
-- **Styling**: Tailwind CSS, Shadcn UI.
+Unit/component/API tests run with Vitest; database policies and transactional behavior run against isolated PGlite fixtures. Playwright journeys use an isolated production build, mock external network responses, and test desktop/mobile listing flows. This browser coverage complements database tests and does not prove real Stripe/email delivery.
 
-### Directory Structure (`frontend/`)
-- `app/`: Routes and pages.
-- `components/`: Reusable UI and feature components.
-- `lib/`: Utilities, API clients, Zod schemas.
-- `hooks/`: Custom React hooks.
-
-## Payments & Escrow Flow
-
-1.  **Negotiation**: Users chat and agree on terms.
-2.  **Intent**: Buyer initiates "Get" action -> creates Stripe Payment Intent.
-3.  **Hold**: Funds are authorized (manual capture).
-4.  **Confirmation**: Both Buyer and Seller must confirm completion.
-5.  **Capture**: Funds are captured and transferred to Seller (minus platform fee).
-
-## Deployment
-
-- **Frontend**: Vercel (recommended) or any Node.js/Docker host.
-- **Backend**: Supabase Cloud.
+Production is an existing Vercel deployment with a separate Supabase project. See [SETUP](SETUP.md) for historical applied migration mappings and [current repairs](AUDIT_REPAIRS_2026-10-26.md) for new rollout requirements. A source edit, CI run or local build does not deploy automatically.

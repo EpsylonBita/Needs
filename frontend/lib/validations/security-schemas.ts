@@ -32,7 +32,7 @@ export const paymentWebhookSchema = z.object({
   id: z.string(),
   type: z.string(),
   data: z.object({
-    object: z.record(z.any()),
+    object: z.record(z.string(), z.any()),
   }),
 })
 
@@ -85,7 +85,7 @@ export function validateInput<T>(schema: z.ZodSchema<T>, data: unknown): T {
     return schema.parse(data)
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const errorMessage = error.errors.map(err => `${err.path.join('.')}: ${err.message}`).join(', ')
+      const errorMessage = error.issues.map(err => `${err.path.join('.')}: ${err.message}`).join(', ')
       throw new Error(`Validation failed: ${errorMessage}`)
     }
     throw error

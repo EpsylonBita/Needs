@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { withApiErrorHandler, ErrorFactory } from '@/lib/utils/error-handler'
 import { randomBytes } from 'crypto'
+import { withApiErrorHandler, ErrorFactory } from '@/lib/utils/error-handler'
 
 function randomToken() {
   return randomBytes(32).toString('hex')

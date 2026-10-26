@@ -20,19 +20,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [router])
   return (
     <div className="flex min-h-screen">
-      <aside className="w-56 border-r p-4 space-y-2">
+      <aside className="w-56 border-r bg-card text-card-foreground p-4 space-y-2">
         <div className="text-lg font-bold">{t('admin.title','Admin')}</div>
         <nav className="flex flex-col gap-2">
-          <Link href="/dashboard/admin/overview" className="px-2 py-1 rounded hover:bg-gray-100">{t('admin.overview','Overview')}</Link>
-          <Link href="/dashboard/admin/payments" className="px-2 py-1 rounded hover:bg-gray-100">{t('admin.payments','Payments')}</Link>
-          <Link href="/dashboard/admin/disputes" className="px-2 py-1 rounded hover:bg-gray-100">{t('admin.disputes','Disputes')}</Link>
-          <Link href="/dashboard/admin/listings" className="px-2 py-1 rounded hover:bg-gray-100">{t('admin.listings','Listings')}</Link>
-          <Link href="/dashboard/admin/users" className="px-2 py-1 rounded hover:bg-gray-100">{t('admin.users','Users')}</Link>
-          <Link href="/dashboard/admin/notifications" className="px-2 py-1 rounded hover:bg-gray-100">{t('admin.notifications','Notifications')}</Link>
-          <Link href="/dashboard/admin/milestones" className="px-2 py-1 rounded hover:bg-gray-100">{t('admin.milestones','Milestones')}</Link>
-          <Link href="/dashboard/admin/status" className="px-2 py-1 rounded hover:bg-gray-100">{t('admin.status','Status')}</Link>
-          <Link href="/dashboard/admin/logs" className="px-2 py-1 rounded hover:bg-gray-100">{t('admin.logs','Audit Logs')}</Link>
-          <Link href="/dashboard/admin/settings" className="px-2 py-1 rounded hover:bg-gray-100">{t('admin.settings','Settings')}</Link>
+          <Link href="/dashboard/admin/overview" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.overview','Overview')}</Link>
+          <Link href="/dashboard/admin/payments" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.payments','Payments')}</Link>
+          <Link href="/dashboard/admin/disputes" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.disputes','Disputes')}</Link>
+          <Link href="/dashboard/admin/listings" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.listings','Listings')}</Link>
+          <Link href="/dashboard/admin/users" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.users','Users')}</Link>
+          <Link href="/dashboard/admin/account-requests" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.accountRequests','Account requests')}</Link>
+          <Link href="/dashboard/admin/notifications" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.notifications','Notifications')}</Link>
+          <Link href="/dashboard/admin/milestones" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.milestones','Milestones')}</Link>
+          <Link href="/dashboard/admin/status" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.status','Status')}</Link>
+          <Link href="/dashboard/admin/logs" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.logs','Audit Logs')}</Link>
+          <Link href="/dashboard/admin/settings" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.settings','Settings')}</Link>
         </nav>
       </aside>
       <main className="flex-1 p-4">{children}</main>

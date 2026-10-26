@@ -2,6 +2,9 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import Cookies from "js-cookie";
 
+import { messages as greekMessages } from "../locales/el";
+import { messages as englishMessages } from "../locales/en";
+
 type Messages = Record<string, string>;
 
 type I18nContextValue = {
@@ -15,40 +18,33 @@ type I18nContextValue = {
 
 const I18nContext = createContext<I18nContextValue | null>(null);
 
-function loadMessages(locale: string): Messages {
-  try {
-    if (locale === "el") {
-      const el = require("@/locales/el").messages as Messages;
-      return el;
-    }
-    const en = require("@/locales/en").messages as Messages;
-    return en;
-  } catch {
-    return {};
-  }
+function supportedLocale(value: unknown): "el" | "en" | null {
+  return value === "el" || value === "en" ? value : null;
 }
 
-export function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocaleState] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("locale") || Cookies.get("locale") || "en";
-    }
-    return "en";
-  });
-
-  const [messages, setMessages] = useState<Messages>(() => loadMessages(locale));
+export function I18nProvider({ children, initialLocale = "en" }: { children: React.ReactNode; initialLocale?: string }) {
+  // The server and first browser render must use the same locale snapshot.
+  const [locale, setLocaleState] = useState(() => supportedLocale(initialLocale) || "en");
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const messages: Messages = locale === "el" ? greekMessages : englishMessages;
 
   useEffect(() => {
-    setMessages(loadMessages(locale));
-    if (typeof window !== "undefined") {
-      localStorage.setItem("locale", locale);
+    // Preserve localStorage-only preferences from older visits after hydration.
+    let preferred: "el" | "en" | null = null;
+    try { preferred = supportedLocale(localStorage.getItem("locale")); } catch { /* Storage may be disabled. */ }
+    if (!preferred) {
+      try { preferred = supportedLocale(Cookies.get("locale")); } catch { /* Keep the server locale when cookies are unavailable. */ }
     }
-    Cookies.set("locale", locale, { sameSite: "lax" });
-    try {
-      const html = document.querySelector("html");
-      if (html) html.setAttribute("lang", locale);
-    } catch {}
-  }, [locale]);
+    setLocaleState(current => preferred || current);
+    setPreferencesLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!preferencesLoaded) return;
+    try { localStorage.setItem("locale", locale); } catch { /* The in-memory preference still works. */ }
+    try { Cookies.set("locale", locale, { sameSite: "lax" }); } catch { /* Cookies may be disabled. */ }
+    document.documentElement.lang = locale;
+  }, [locale, preferencesLoaded]);
 
   const setLocale = (l: string) => {
     setLocaleState(l === "el" ? "el" : "en");

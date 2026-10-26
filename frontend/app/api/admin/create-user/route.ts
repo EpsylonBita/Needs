@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase/server'
 import { requireAdmin, UserRole } from '@/lib/auth/role-based-admin'
+import { supabaseAdmin } from '@/lib/supabase/server'
+import { withApiErrorHandler, ErrorFactory, createValidationError } from '@/lib/utils/error-handler'
 import { log } from '@/lib/utils/logger'
 import { rateLimit } from '@/lib/utils/rate-limit'
 import { adminCreateUserSchema, validateInput } from '@/lib/validations/security-schemas'
-import { withApiErrorHandler, ErrorFactory, createValidationError } from '@/lib/utils/error-handler'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,8 +48,8 @@ export const POST = withApiErrorHandler(async (req: NextRequest) => {
       email_confirm: true,
       user_metadata: { 
         display_name: validatedData.display_name,
-        role: validatedData.role 
       },
+      app_metadata: { role: validatedData.role },
     })
     
     if (created.error) {

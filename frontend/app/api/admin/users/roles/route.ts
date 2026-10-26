@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { requireAdmin, UserRole, updateUserRole, getUsersWithRoles } from '@/lib/auth/role-based-admin'
+import { withApiErrorHandler, ErrorFactory, createValidationError } from '@/lib/utils/error-handler'
 import { log } from '@/lib/utils/logger'
 import { rateLimit } from '@/lib/utils/rate-limit'
-import { z } from 'zod'
-import { withApiErrorHandler, ErrorFactory, createValidationError } from '@/lib/utils/error-handler'
 
 const updateRoleSchema = z.object({
   userId: z.string().uuid(),

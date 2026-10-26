@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
 import { NextRequest } from 'next/server'
+import { describe, it, expect, vi } from 'vitest'
 import { POST as RefundPOST } from '../../../../app/api/payments/disputes/[id]/refund/route'
 import { POST as ResolvePOST } from '../../../../app/api/payments/disputes/[id]/resolve/route'
 
@@ -40,9 +40,7 @@ vi.mock('@/lib/stripe/server', () => ({
   }
 }))
 
-vi.mock('@/lib/utils/error-handler', () => ({
-  withApiErrorHandler: (handler: any) => handler
-}))
+// Exercise the real error boundary, including ErrorFactory and HTTP status mapping.
 
 vi.mock('@/lib/utils/rate-limit-enhanced', () => ({
   rateLimitEnhanced: vi.fn(async () => ({ allowed: true })),

@@ -1,193 +1,76 @@
-"use client"
+'use client'
 
-import { useState } from "react"
-
-import Image from "next/image"
-import { useRouter } from "next/navigation"
-
-import { format } from "date-fns"
-import { Calendar, ImageIcon, Loader2, Mail, MapPin, MoreVertical, Upload } from "lucide-react"
-
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { useProfile } from "@/contexts"
-
-import { ProfileData } from "@/lib/services/profile-service"
-import { EditProfileDialog } from "./edit-profile-dialog"
-import { UploadPhotoDialog } from "./upload-photo-dialog"
+import { useState } from 'react'
+import Image from 'next/image'
+import Link from 'next/link'
+import { CalendarDays, Camera, ExternalLink, ImagePlus, Link2, Loader2, Mail, MapPin } from 'lucide-react'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
+import { useToast } from '@/components/ui/use-toast'
+import { useProfile } from '@/contexts/profile-context'
+import { useI18n } from '@/contexts/i18n-context'
+import { EditProfileDialog } from './edit-profile-dialog'
+import { UploadPhotoDialog } from './upload-photo-dialog'
+import { profileUiCopy } from './profile-ui-copy'
+import styles from './profile.module.css'
 
 export function ProfileHeader() {
-  const { profile, isLoading, updateProfile, refreshProfile } = useProfile()
-  const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false)
-  const [isCoverDialogOpen, setIsCoverDialogOpen] = useState(false)
-  const router = useRouter()
+  const { profile, isLoading, refreshProfile, updateProfile } = useProfile()
+  const { locale } = useI18n()
+  const { toast } = useToast()
+  const copy = profileUiCopy[locale === 'el' ? 'el' : 'en']
+  const [photo, setPhoto] = useState<'avatar' | 'cover' | null>(null)
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
-      </div>
-    )
-  }
+  // Keep the dialogs mounted while an existing profile is being saved.
+  if (!profile) return isLoading ? <div role="status" className="flex justify-center py-12"><Loader2 className="animate-spin" aria-label={locale === 'el' ? 'Φόρτωση προφίλ' : 'Loading profile'} /></div> : null
 
-  if (!profile) {
-    return null
-  }
+  const publicPath = `/profile/${encodeURIComponent(profile.id)}`
+  const joined = profile.createdAt && !Number.isNaN(new Date(profile.createdAt).getTime())
+    ? new Intl.DateTimeFormat(locale === 'el' ? 'el-GR' : 'en-GB', { month: 'long', year: 'numeric' }).format(new Date(profile.createdAt)) : null
+  const initials = (profile.fullName || copy.member).trim().split(/\s+/).slice(0, 2).map(word => word[0]).join('')
 
-  const handlePhotoUpdate = async (type: "avatar" | "cover", url: string) => {
+  async function copyLink() {
     try {
-      await updateProfile({
-        [type === "avatar" ? "avatar" : "coverImage"]: url,
-      })
-    } catch (error) {
-      console.error(`Failed to update ${type}:`, error)
-    }
+      await navigator.clipboard.writeText(new URL(publicPath, window.location.origin).href)
+      toast({ title: copy.copied })
+    } catch { toast({ title: copy.copyFailed, variant: 'destructive' }) }
   }
 
-  const handleProfileUpdate = async (data: ProfileData) => {
-    try {
-      await refreshProfile()
-    } catch (error) {
-      console.error('Error updating profile:', error)
-    }
-  }
-
-  const joinedDate = profile.createdAt ? format(new Date(profile.createdAt), 'MMMM yyyy') : ''
-
-  return (
-    <div className="relative -m-6">
-      <div className="relative bg-gradient-to-b from-blue-500 to-white rounded-t-xl">
-        {/* Cover Image Background */}
-        {profile.coverImage && (
-          <div
-            className="absolute inset-x-0 top-0 h-60 rounded-t-xl overflow-hidden cursor-pointer group transition-all duration-200 ease-in-out hover:scale-101"
-            onClick={() => setIsCoverDialogOpen(true)}
-          >
-            <div className="absolute inset-0">
-              <Image
-                src={profile.coverImage}
-                alt="Cover"
-                fill
-                sizes="(max-width: 768px) 100vw, 1200px"
-                className="object-cover transition-transform duration-200 group-hover:scale-105"
-              />
-            </div>
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/50 rounded-t-xl" />
-          </div>
-        )}
-
-        {/* Background Change Button */}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="absolute top-2 right-2 bg-black/10 hover:bg-black/20 backdrop-blur-sm z-10 text-gray-500 hover:text-white transition-colors duration-200 rounded-full"
-          onClick={() => setIsCoverDialogOpen(true)}
-        >
-          <ImageIcon className="h-4 w-4" />
-        </Button>
-
-        <div className="relative px-4 py-12">
-          <div className="flex flex-col items-center space-y-4 md:flex-row md:space-x-8 md:space-y-0">
-            {/* Avatar with Upload */}
-            <div
-              className="relative group cursor-pointer transition-transform duration-200 hover:scale-105"
-              onClick={(e) => {
-                e.stopPropagation()
-                setIsAvatarDialogOpen(true)
-              }}
-            >
-              <Avatar className="h-32 w-32 border-4 border-white shadow-lg transition-all duration-200 group-hover:scale-105">
-                {profile.avatar ? (
-                  <AvatarImage
-                    src={profile.avatar || undefined}
-                    alt={profile.fullName || ''}
-                    className="object-cover transition-transform duration-200 group-hover:scale-105"
-                  />
-                ) : (
-                  <AvatarFallback className="bg-blue-100 text-blue-900 text-xl font-semibold">
-                    {(profile.fullName || '').split(' ').map(n => n[0]).join('')}
-                  </AvatarFallback>
-                )}
-              </Avatar>
-              <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 transition-opacity duration-200 group-hover:opacity-80">
-                <Upload className="h-8 w-8 text-white" />
-              </div>
-            </div>
-
-            {/* User Info */}
-            <div className="flex flex-1 flex-col items-center space-y-4 text-center md:items-start md:text-left">
-              <div className="space-y-1">
-                <h1 className="text-2xl font-bold text-gray-900">{profile.fullName}</h1>
-                <p className="text-gray-700">{profile.title}</p>
-              </div>
-
-              <p className="max-w-2xl text-gray-700">
-                {profile.bio}
-              </p>
-            </div>
-
-            {/* Actions */}
-            <div className="absolute bottom-4 right-4 flex gap-2">
-              <Button onClick={() => router.push('/profile?tab=dashboard')} className="bg-blue-600 hover:bg-blue-700 text-white">
-                Dashboard
-              </Button>
-              <EditProfileDialog
-                defaultValues={{
-                  fullName: profile.fullName,
-                  title: profile.title,
-                  email: profile.email,
-                  location: profile.location,
-                  bio: profile.bio,
-                  avatar: profile.avatar,
-                }}
-                currentAvatar={profile.avatar || undefined}
-                onUpdate={handleProfileUpdate}
-              />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="secondary" className="bg-gray-100 hover:bg-gray-200 text-gray-900 border-gray-200 shadow-md hover:shadow-lg transition-shadow duration-200">
-                    <MoreVertical className="h-4 w-4 mr-2" />
-                    More
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => router.push('/profile?tab=dashboard')}>Open Dashboard</DropdownMenuItem>
-                  <DropdownMenuItem>Share Profile</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-        </div>
-        {/* Moved Badges to bottom-left */}
-        <div className="absolute bottom-2 left-6 flex flex-wrap items-center gap-3 text-sm">
-          <div className="flex items-center gap-1 text-blue-500 hover:text-white transition-colors duration-200">
-            <MapPin className="h-4 w-4 text-white hover:text-blue-500" /> {profile.location}
-          </div>
-          <div  className="flex items-center gap-1 text-blue-500 hover:text-white transition-colors duration-200" >
-            <Mail className="h-4 w-4 text-white hover:text-blue-500" /> {profile.email}
-          </div >
-          <div className="flex items-center gap-1 text-blue-500 hover:text-white transition-colors duration-200">
-            <Calendar className="h-4 w-4 text-white hover:text-blue-500" /> Joined {joinedDate}
-          </div >
+  return <section className={styles.identity} aria-label={profile.fullName || copy.member}>
+    {profile.coverImage && <div className={styles.cover}>
+      <Image src={profile.coverImage} alt={locale === 'el' ? 'Εξώφυλλο προφίλ' : 'Profile cover'} fill sizes="(max-width: 700px) 100vw, 1180px" />
+    </div>}
+    <div className={styles.identityBody}>
+      <button type="button" className={styles.avatarButton} onClick={() => setPhoto('avatar')} aria-label={copy.avatar}>
+        <Avatar className={styles.avatar}>
+          <AvatarImage src={profile.avatar || undefined} alt={profile.fullName || copy.member} className="object-cover" />
+          <AvatarFallback className="bg-primary/10 text-xl font-semibold text-primary">{initials}</AvatarFallback>
+        </Avatar>
+        <span className={styles.avatarBadge}><Camera size={13} aria-hidden="true" /></span>
+      </button>
+      <div className={styles.identityText}>
+        <h1 className={styles.name}>{profile.fullName || copy.member}</h1>
+        {profile.title && <p className={styles.professionalTitle}>{profile.title}</p>}
+        <div className={styles.metadata}>
+          {profile.location && <span><MapPin aria-hidden="true" />{profile.location}</span>}
+          {joined && <span><CalendarDays aria-hidden="true" />{copy.joined} {joined}</span>}
+          {profile.email && <span><Mail aria-hidden="true" />{profile.email}</span>}
         </div>
       </div>
-
-      {/* Upload Dialogs */}
-      <UploadPhotoDialog
-        open={isAvatarDialogOpen}
-        onOpenChange={setIsAvatarDialogOpen}
-        onUpload={(url) => handlePhotoUpdate("avatar", url)}
-        type="avatar"
-        currentImage={profile.avatar}
-      />
-      <UploadPhotoDialog
-        open={isCoverDialogOpen}
-        onOpenChange={setIsCoverDialogOpen}
-        onUpload={(url) => handlePhotoUpdate("cover", url)}
-        type="cover"
-        currentImage={profile.coverImage}
-      />
+      <div className={styles.actions}>
+        <EditProfileDialog defaultValues={profile} currentAvatar={profile.avatar || undefined} onUpdate={async () => { await refreshProfile() }} />
+        <Button asChild variant="outline"><Link href={publicPath}><ExternalLink size={15} aria-hidden="true" />{copy.publicProfile}</Link></Button>
+      </div>
     </div>
-  )
+    {profile.bio && <p className={styles.bio}>{profile.bio}</p>}
+    <div className={styles.photoActions}>
+      <Button variant="ghost" size="sm" onClick={() => setPhoto('avatar')}><Camera size={15} aria-hidden="true" />{copy.avatar}</Button>
+      <Button variant="ghost" size="sm" onClick={() => setPhoto('cover')}><ImagePlus size={15} aria-hidden="true" />{profile.coverImage ? copy.cover : copy.addCover}</Button>
+      <Button variant="ghost" size="sm" onClick={() => { void copyLink() }}><Link2 size={15} aria-hidden="true" />{copy.copyLink}</Button>
+    </div>
+    <UploadPhotoDialog open={photo === 'avatar'} onOpenChange={open => setPhoto(open ? 'avatar' : null)} type="avatar" currentImage={profile.avatar}
+      onUpload={async url => { await updateProfile({ avatar: url }) }} />
+    <UploadPhotoDialog open={photo === 'cover'} onOpenChange={open => setPhoto(open ? 'cover' : null)} type="cover" currentImage={profile.coverImage}
+      onUpload={async url => { await updateProfile({ coverImage: url }) }} />
+  </section>
 }

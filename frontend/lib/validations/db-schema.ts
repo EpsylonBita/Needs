@@ -23,8 +23,10 @@ export const listingSchema = z.object({
   main_category: z.enum(['Items', 'Services']),
   sub_category: z.enum(['Buy', 'Sell', 'Free', 'I want', 'I will', 'I can']),
   status: z.enum(['active', 'sold', 'suspended']),
+  owner_status: z.enum(['active', 'sold', 'suspended']).optional(),
+  moderation_suspended: z.boolean().optional(),
   location: z.any().nullable(),
-  address: z.record(z.any()).nullable(),
+  address: z.record(z.string(), z.any()).nullable(),
   created_at: z.string()
 })
 
@@ -58,7 +60,7 @@ export const messageSchema = z.object({
   chat_id: z.string(),
   sender_id: z.string(),
   content: z.string().nullable(),
-  attachments: z.record(z.any()).nullable(),
+  attachments: z.record(z.string(), z.any()).nullable(),
   reply_to: z.string().nullable(),
   created_at: z.string()
 })
@@ -68,6 +70,8 @@ export const paymentSchema = z.object({
   listing_id: z.string(),
   buyer_id: z.string(),
   seller_id: z.string(),
+  chat_id: z.string().nullable().optional(),
+  role_review_required: z.boolean().optional(),
   amount: z.number().nonnegative(),
   platform_fee: z.number().nonnegative(),
   stripe_payment_intent: z.string().nullable(),
@@ -87,7 +91,7 @@ export const transactionSchema = z.object({
   type: z.enum(['charge', 'transfer', 'refund']),
   amount: z.number().nonnegative(),
   fee: z.number().nonnegative().optional(),
-  metadata: z.record(z.any()).nullable().optional(),
+  metadata: z.record(z.string(), z.any()).nullable().optional(),
   status: z.string(),
   created_at: z.string()
 })
@@ -107,9 +111,10 @@ export const reviewSchema = z.object({
   listing_id: z.string(),
   seller_id: z.string(),
   reviewer_id: z.string(),
-  rating: z.number().min(1).max(5),
+  payment_id: z.string().nullable().optional(),
+  rating: z.number().int().min(1).max(5),
   comment: z.string().nullable(),
-  votes: z.record(z.any()),
+  votes: z.record(z.string(), z.any()),
   created_at: z.string()
 })
 
@@ -117,7 +122,7 @@ export const notificationSchema = z.object({
   id: z.string(),
   user_id: z.string(),
   type: z.string(),
-  payload: z.record(z.any()).nullable(),
+  payload: z.record(z.string(), z.any()).nullable(),
   read: z.boolean(),
   created_at: z.string()
 })
@@ -127,6 +132,7 @@ export const milestoneSchema = z.object({
   listing_id: z.string(),
   buyer_id: z.string(),
   seller_id: z.string(),
+  chat_id: z.string().nullable().optional(),
   title: z.string(),
   amount: z.number().nonnegative(),
   status: z.enum(['pending', 'requires_capture', 'completed', 'failed']),
@@ -141,10 +147,10 @@ export const webhookEventSchema = z.object({
   id: z.string(),
   source: z.string().optional(),
   event_type: z.string().optional(),
-  payload: z.record(z.any()).nullable().optional(),
+  payload: z.record(z.string(), z.any()).nullable().optional(),
   processed_at: z.string().nullable().optional(),
-  processing_result: z.record(z.any()).nullable().optional(),
-  processing_error: z.record(z.any()).nullable().optional(),
+  processing_result: z.record(z.string(), z.any()).nullable().optional(),
+  processing_error: z.record(z.string(), z.any()).nullable().optional(),
   created_at: z.string()
 })
 

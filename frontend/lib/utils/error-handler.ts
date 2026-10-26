@@ -332,11 +332,16 @@ export function createValidationError(field: string, message: string): AppError 
 
 export function withApiErrorHandler<T extends (req: NextRequest) => Promise<Response | NextResponse>>(handler: T) {
   return async function (req: NextRequest): Promise<Response | NextResponse> {
+    const suppliedId = req.headers.get('x-request-id')
+    const rid = suppliedId && /^[\w.-]{1,128}$/.test(suppliedId)
+      ? suppliedId
+      : crypto.randomUUID()
     try {
-      return await handler(req)
+      const response = await handler(req)
+      response.headers.set('X-Request-Id', rid)
+      return response
     } catch (error) {
       const { status, response } = handleApiError(error)
-      const rid = req.headers.get('x-request-id') || crypto.randomUUID()
       const res = { ...response, requestId: rid }
       return NextResponse.json(res, { status, headers: { 'X-Request-Id': rid } })
     }

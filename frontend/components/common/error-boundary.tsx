@@ -103,13 +103,13 @@ export class ErrorBoundary extends Component<Props, State> {
 
       // Default error UI
       return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="min-h-screen bg-background flex items-center justify-center p-4">
           <Card className="max-w-lg w-full">
             <CardHeader className="text-center">
-              <div className="mx-auto mb-4 h-12 w-12 text-red-500">
+              <div className="mx-auto mb-4 h-12 w-12 text-destructive">
                 <AlertCircle className="h-12 w-12" />
               </div>
-              <CardTitle className="text-xl text-red-600">
+              <CardTitle className="text-xl text-destructive">
                 Something went wrong
               </CardTitle>
               <CardDescription>
@@ -119,24 +119,24 @@ export class ErrorBoundary extends Component<Props, State> {
             
             <CardContent>
               <div className="space-y-4">
-                <div className="bg-gray-100 rounded-lg p-4">
-                  <h4 className="font-semibold text-sm text-gray-700 mb-2">Error Details</h4>
-                  <p className="text-sm text-gray-600 break-words">
+                <div className="bg-muted rounded-lg p-4">
+                  <h4 className="font-semibold text-sm text-foreground mb-2">Error Details</h4>
+                  <p className="text-sm text-muted-foreground break-words">
                     {this.state.error?.message || 'Unknown error'}
                   </p>
                   {process.env.NODE_ENV === 'development' && this.state.errorInfo && (
                     <details className="mt-3">
-                      <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700">
+                      <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
                         Stack trace (development only)
                       </summary>
-                      <pre className="mt-2 text-xs text-gray-500 overflow-auto max-h-32">
+                      <pre className="mt-2 text-xs text-muted-foreground overflow-auto max-h-32">
                         {this.state.errorInfo.componentStack}
                       </pre>
                     </details>
                   )}
                 </div>
                 
-                <div className="text-sm text-gray-600">
+                <div className="text-sm text-muted-foreground">
                   <p>If this problem persists, please:</p>
                   <ul className="list-disc list-inside mt-2 space-y-1">
                     <li>Try refreshing the page</li>
@@ -254,32 +254,32 @@ export class CriticalErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
-          <Card className="max-w-lg w-full border-red-200">
+        <div className="min-h-screen bg-destructive/5 flex items-center justify-center p-4">
+          <Card className="max-w-lg w-full border-destructive/25">
             <CardHeader className="text-center">
-              <div className="mx-auto mb-4 h-16 w-16 text-red-600">
+              <div className="mx-auto mb-4 h-16 w-16 text-destructive">
                 <AlertCircle className="h-16 w-16" />
               </div>
-              <CardTitle className="text-2xl text-red-700">
+              <CardTitle className="text-2xl text-destructive">
                 Critical Error
               </CardTitle>
-              <CardDescription className="text-red-600">
+              <CardDescription className="text-destructive">
                 A critical error has occurred that prevents the application from functioning properly.
               </CardDescription>
             </CardHeader>
             
             <CardContent>
-              <div className="bg-red-100 rounded-lg p-4 border border-red-200">
-                <h4 className="font-semibold text-sm text-red-800 mb-2">Error Details</h4>
-                <p className="text-sm text-red-700 break-words">
+              <div className="bg-destructive/10 rounded-lg p-4 border border-destructive/25">
+                <h4 className="font-semibold text-sm text-destructive mb-2">Error Details</h4>
+                <p className="text-sm text-destructive break-words">
                   {this.state.error?.message || 'Unknown critical error'}
                 </p>
                 {process.env.NODE_ENV === 'development' && (
                   <details className="mt-3">
-                    <summary className="cursor-pointer text-sm text-red-600 hover:text-red-800">
+                    <summary className="cursor-pointer text-sm text-destructive hover:text-destructive">
                       Technical details (development only)
                     </summary>
-                    <pre className="mt-2 text-xs text-red-600 overflow-auto max-h-32">
+                    <pre className="mt-2 text-xs text-destructive overflow-auto max-h-32">
                       {this.state.errorInfo?.componentStack || 'No stack trace available'}
                     </pre>
                   </details>

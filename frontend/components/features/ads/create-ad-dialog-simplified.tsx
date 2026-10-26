@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from "@/components/ui/label"
 import { useI18n } from '@/contexts/i18n-context'
 import { useAdFormState } from '@/hooks/use-ad-form-state'
+import { CATEGORY_STRUCTURE } from '@/lib/constants/categories'
 import { createListing } from '@/lib/services/listing-service'
 import { uploadListingImages } from '@/lib/services/storage-service'
 import { witService } from '@/lib/services/wit-service'
@@ -60,12 +61,14 @@ export function CreateAdDialog({ open, onOpenChange }: CreateAdDialogProps) {
     showMap,
     setShowMap,
     coordinates,
+    setCoordinates,
     locationName,
     setLocationName,
     isLocating,
     selectedCategory,
     selectedSubcategory,
     selectedTags,
+    setSelectedTags,
     suggestedTags: _suggestedTags,
     isLoadingTags,
     openCategory: _openCategory,
@@ -131,7 +134,7 @@ export function CreateAdDialog({ open, onOpenChange }: CreateAdDialogProps) {
       if (!profile) throw new Error('Profile not found')
 
       // Upload images first
-      let imageUrls: string[] = []
+      const imageUrls: string[] = []
       
 
       // Create listing
@@ -176,19 +179,31 @@ export function CreateAdDialog({ open, onOpenChange }: CreateAdDialogProps) {
     
     try {
       const result = await witService.analyzeText(nlpInput)
+      if (result.title) setValue('title', result.title)
+      if (result.description) setValue('description', result.description)
+      const category = result.category && Object.hasOwn(CATEGORY_STRUCTURE, result.category)
+        ? result.category : ''
+      handleCategorySelect(category)
+      if (category && result.subcategory
+        && CATEGORY_STRUCTURE[category as keyof typeof CATEGORY_STRUCTURE].subcategories.includes(result.subcategory)) {
+        handleSubcategorySelect(result.subcategory)
+      }
+      setValue('price', result.price ?? '')
+      if (result.contactNumber) setValue('contactNumber', result.contactNumber)
+      if (result.location) {
+        if (result.location !== locationName) setCoordinates(null)
+        setLocationName(result.location)
+        setValue('location', result.location)
+      }
       setAnalysis({ tags: result.tags || [], smartTags: result.smartTags || [] })
       setAnalysisSuccess(true)
-      
-      // Auto-select some tags
-      const newTags = (result.smartTags || []).slice(0, 3).filter((tag: string) => !selectedTags.includes(tag))
-      if (newTags.length > 0) {
-        const updatedTags = [...selectedTags, ...newTags]
-        setValue('tags', updatedTags)
-      }
+      const tags = [...new Set([...result.tags, ...result.smartTags])]
+      setSelectedTags(tags)
+      setValue('tags', tags)
       
       setTimeout(() => setAnalysisSuccess(false), 3000)
     } catch (error) {
-      console.error('AI analysis failed:', error)
+      console.error('Local text analysis failed:', error)
       setAnalysisError('Failed to analyze text. Please try again.')
     } finally {
       setIsAnalyzing(false)
@@ -197,12 +212,12 @@ export function CreateAdDialog({ open, onOpenChange }: CreateAdDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col bg-white dark:bg-gray-950">
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col bg-card text-card-foreground">
         <DialogHeader className="flex-none">
           <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-transparent">
             {t('ad.create.title','Create New Advertisement')}
           </DialogTitle>
-          <DialogDescription className="text-gray-500 dark:text-gray-400">
+          <DialogDescription className="text-muted-foreground dark:text-gray-400">
             {t('ad.create.desc','Fill in the details below to create your advertisement.')}
           </DialogDescription>
         </DialogHeader>
@@ -270,7 +285,7 @@ export function CreateAdDialog({ open, onOpenChange }: CreateAdDialogProps) {
               </div>
 
               <div>
-                <Label className="text-base font-semibold text-blue-600 dark:text-blue-400">
+                <Label className="text-base font-semibold text-primary">
                   {t('ad.images.upload','Upload Images')}
                 </Label>
                 <ImageUploader 
@@ -283,13 +298,13 @@ export function CreateAdDialog({ open, onOpenChange }: CreateAdDialogProps) {
           </div>
 
           {/* Footer - fixed */}
-          <div className="flex-none pt-6 mt-6 border-t border-gray-200 dark:border-gray-800">
+          <div className="flex-none pt-6 mt-6 border-t border-border">
             <div className="flex justify-end gap-4">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => onOpenChange(false)}
-                className="border-0 ring-1 ring-gray-200 dark:ring-gray-800 hover:bg-gray-100 dark:hover:bg-gray-900 hover:ring-gray-300 dark:hover:ring-gray-700"
+                className="border-0 ring-1 ring-border hover:bg-accent hover:ring-ring"
               >
                 {t('common.cancel','Cancel')}
               </Button>

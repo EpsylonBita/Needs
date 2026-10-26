@@ -1,10 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/lib/stripe/server', () => ({
   stripe: {
+    accounts: { retrieve: vi.fn(async () => ({ id: 'acct_seller', capabilities: { transfers: 'active' } })) },
     paymentIntents: {
       create: vi.fn(),
+      retrieve: vi.fn(),
       cancel: vi.fn()
     }
   }
@@ -27,13 +29,25 @@ vi.mock('@/lib/supabase/server', () => {
         return { data: { user: null }, error: new Error('invalid') }
       })
     },
+    rpc: vi.fn(async () => scenario.milestonesInsertError
+      ? { data: null, error: { code: scenario.milestoneErrorCode || 'P0001', message: 'Failed to create milestone record' } }
+      : { data: { milestone_id: 'milestone-record-id', payment_id: 'payment-record-id' }, error: null }),
     from: vi.fn((table: string) => {
+      if (table === 'feature_flags') return { select: () => ({ eq: (_key: string, flag: string) => ({ single: async () => flag === 'milestones_enabled'
+        ? { data: scenario.milestonesEnabled === null ? null : { enabled: scenario.milestonesEnabled }, error: scenario.milestoneFlagError || null }
+        : { data: { enabled: scenario.paymentsEnabled !== false }, error: null } }) }) }
+      if (table === 'payments') {
+        const update = { eq: vi.fn().mockReturnThis(), then: (resolve: (value: unknown) => unknown) => resolve({ error: null }) }
+        return { update: vi.fn(() => update) }
+      }
       if (table === 'profiles') {
         let lastKey: string | null = null
+        chain.select.mockImplementation((columns: string) => { state.columns = columns; return chain })
         chain.eq.mockImplementation((k: string, v: any) => { state[k] = v; lastKey = k; return chain })
         chain.single.mockImplementation(async () => {
+          if (state.columns.includes('stripe_customer_id')) return { data: null, error: { message: 'column profiles.stripe_customer_id does not exist' } }
           if (lastKey === 'user_id') {
-            return { data: { id: 'buyer-profile-id', stripe_customer_id: 'cus_test123' } }
+            return { data: { id: 'buyer-profile-id' } }
           }
           if (lastKey === 'id') {
             return scenario.sellerHasPayouts
@@ -48,7 +62,7 @@ vi.mock('@/lib/supabase/server', () => {
         chain.single.mockImplementation(async () => {
           const statusOk = state['status'] === 'active'
           if (statusOk && scenario.listingStatus === 'active') {
-            return { data: { id: scenario.listingId, price: 100, seller_id: scenario.sellerId, title: 'Test Item', status: 'active' }, error: null }
+            return { data: { id: scenario.listingId, price: 100, seller_id: scenario.sellerId, title: 'Test Item', status: 'active', main_category: 'Items', sub_category: 'Sell' }, error: null }
           }
           return { data: null, error: null }
         })
@@ -64,12 +78,12 @@ vi.mock('@/lib/supabase/server', () => {
         ;(chain as any).then = undefined
         chain.single.mockReset()
         return {
-          select: vi.fn(() => ({ eq: vi.fn(() => ({ eq: vi.fn(() => ({
+          select: vi.fn(() => ({ eq: vi.fn(() => ({ eq: vi.fn(() => ({ order: vi.fn(() => ({
             // return existing pending amounts
-            data: scenario.pendingMilestones.map((a: number) => ({ amount: a })), error: null
-          })) })) })),
+            data: (scenario.milestones || scenario.pendingMilestones.map((a: number) => ({ amount: a }))).map((m: Record<string, unknown>) => ({ seller_id: scenario.sellerId, chat_id: null, ...m })), error: null
+          })) })) })) })),
           insert: vi.fn(async () => scenario.milestonesInsertError ? { data: null, error: new Error('Failed to create milestone record') } : { data: null, error: null }),
-          update: vi.fn().mockResolvedValue({ data: null, error: null })
+          update: vi.fn(() => { const result = { eq: vi.fn().mockReturnThis(), then: (resolve: (value: unknown) => unknown) => resolve({ error: null }) }; return result })
         } as any
       }
       if (table === 'payment_audit_logs') {
@@ -86,9 +100,7 @@ vi.mock('@/lib/utils/logger', () => ({
   log: vi.fn()
 }))
 
-vi.mock('@/lib/utils/error-handler', () => ({
-  withApiErrorHandler: (handler: any) => handler
-}))
+// Exercise the real error boundary, including ErrorFactory and HTTP status mapping.
 
 vi.mock('@/lib/utils/rate-limit-enhanced', () => ({
   rateLimitEnhanced: vi.fn(async () => {
@@ -124,7 +136,12 @@ describe('Secure Milestone Intent Creation', () => {
     scenario.auditLogError = false
     scenario.listingStatus = 'active'
     scenario.pendingMilestones = []
+    scenario.milestones = undefined
     scenario.milestonesInsertError = false
+    scenario.milestoneErrorCode = undefined
+    scenario.paymentsEnabled = true
+    scenario.milestonesEnabled = true
+    scenario.milestoneFlagError = null
 
     const stripeModule = await import('@/lib/stripe/server') as any
     const routeModule = await import('../../../../../app/api/payments/milestones/create-intent/route')
@@ -161,6 +178,26 @@ describe('Secure Milestone Intent Creation', () => {
     expect(response.status).toBe(401)
   })
 
+  it('blocks inactive Stripe destinations before creating an intent', async () => {
+    const { stripe } = await import('@/lib/stripe/server')
+    vi.mocked(stripe.accounts.retrieve).mockResolvedValueOnce({ id: 'acct_seller', capabilities: { transfers: 'pending' } } as any)
+    expect((await PostHandler(mockRequest)).status).toBe(400)
+    expect(mockStripePaymentIntentsCreate).not.toHaveBeenCalled()
+  })
+
+  it('honors a disabled payment flag', async () => {
+    scenario.paymentsEnabled = false
+    expect((await PostHandler(mockRequest)).status).toBe(403)
+    expect(mockStripePaymentIntentsCreate).not.toHaveBeenCalled()
+  })
+
+  it.each(['disabled', 'missing', 'error'])('does not fund milestones when their own flag is %s', async state => {
+    scenario.milestonesEnabled = state === 'missing' ? null : state !== 'disabled'
+    scenario.milestoneFlagError = state === 'error' ? new Error('offline') : null
+    expect((await PostHandler(mockRequest)).status).toBe(403)
+    expect(mockStripePaymentIntentsCreate).not.toHaveBeenCalled()
+  })
+
   it('should reject invalid authentication', async () => {
     const req = new NextRequest('http://localhost:3000/api/payments/milestones/create-intent', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer bad-token' }, body: JSON.stringify({})
@@ -193,7 +230,7 @@ describe('Secure Milestone Intent Creation', () => {
     const response = await PostHandler(mockRequest)
     const data = await response.json()
     expect(response.status).toBe(400)
-    expect(data.error).toBe('Cannot create milestone for your own listing')
+    expect(data.error).toBe('Cannot purchase your own listing')
   })
 
   it('should reject when milestone amount exceeds listing price', async () => {
@@ -232,7 +269,9 @@ describe('Secure Milestone Intent Creation', () => {
     const data = await response.json()
     expect(response.status).toBe(200)
     expect(data.clientSecret).toBe('pi_milestone_secret')
-    expect(data.milestoneId).toBe('pi_milestone_123')
+    expect(data.milestoneId).toBe('milestone-record-id')
+    expect(data.paymentId).toBe('payment-record-id')
+    expect(data.intentId).toBe('pi_milestone_123')
     const stripeCall = mockStripePaymentIntentsCreate.mock.calls[0][0]
     expect(stripeCall.metadata).toEqual(expect.objectContaining({
       listing_id: scenario.listingId,
@@ -247,5 +286,43 @@ describe('Secure Milestone Intent Creation', () => {
     const response = await PostHandler(mockRequest)
     expect(response.status).toBe(500)
     expect(mockStripePaymentIntentsCancel).toHaveBeenCalledWith('pi_milestone_123')
+  })
+
+  it('does not cancel a possibly committed payment after a transport failure', async () => {
+    scenario.milestonesInsertError = true
+    scenario.milestoneErrorCode = 'NETWORK_ERROR'
+    const response = await PostHandler(mockRequest)
+    expect(response.status).toBe(500)
+    expect(mockStripePaymentIntentsCancel).not.toHaveBeenCalled()
+  })
+
+  it('funds an existing full-price proposal without counting it twice', async () => {
+    const id = '00000000-0000-4000-8000-000000000005'
+    scenario.milestones = [{ id, title: 'Milestone A', amount: 100, status: 'pending', stripe_payment_intent: null }]
+    const req = new NextRequest('http://localhost/api/payments/milestones/create-intent', {
+      method: 'POST', headers: { Authorization: 'Bearer test-token' },
+      body: JSON.stringify({ listingId: scenario.listingId, milestoneId: id, title: 'Milestone A', amount: 100 }),
+    })
+    expect((await PostHandler(req)).status).toBe(200)
+    const { supabaseAdmin } = await import('@/lib/supabase/server')
+    expect(supabaseAdmin.rpc).toHaveBeenCalledWith('create_milestone_payment', expect.objectContaining({ p_milestone_id: id, p_amount: 100 }))
+  })
+
+  it('reuses an unconfirmed milestone intent after a declined card', async () => {
+    scenario.milestones = [{ id: 'proposal', title: 'Milestone A', amount: 50, status: 'pending', stripe_payment_intent: 'pi_existing' }]
+    const { stripe } = await import('@/lib/stripe/server')
+    vi.mocked(stripe.paymentIntents.retrieve).mockResolvedValue({ id: 'pi_existing', status: 'requires_payment_method', currency: 'eur', amount: 5000, client_secret: 'existing_secret' } as any)
+    const response = await PostHandler(mockRequest)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ clientSecret: 'existing_secret' })
+    expect(mockStripePaymentIntentsCreate).not.toHaveBeenCalled()
+  })
+
+  it('uses the canceled intent as deterministic retry identity', async () => {
+    scenario.milestones = [{ id: 'proposal', title: 'Milestone A', amount: 50, status: 'failed', stripe_payment_intent: 'pi_canceled' }]
+    const { stripe } = await import('@/lib/stripe/server')
+    vi.mocked(stripe.paymentIntents.retrieve).mockResolvedValue({ id: 'pi_canceled', status: 'canceled' } as any)
+    expect((await PostHandler(mockRequest)).status).toBe(200)
+    expect(mockStripePaymentIntentsCreate).toHaveBeenCalledWith(expect.anything(), { idempotencyKey: expect.stringMatching(/:after:pi_canceled$/) })
   })
 })
