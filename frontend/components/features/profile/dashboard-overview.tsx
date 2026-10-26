@@ -8,10 +8,11 @@ import { useI18n } from '@/contexts/i18n-context'
 import type { ProfileOverview } from '@/lib/services/profile-overview-service'
 import { profileOverviewCopy } from './profile-overview-copy'
 import { profileUiCopy } from './profile-ui-copy'
+import { formatPublishedListingPrice } from '@/lib/listings/price-policy'
 import styles from './profile.module.css'
 
 export function RecentListings({ data }: { data: ProfileOverview }) {
-  const { locale, formatCurrency } = useI18n()
+  const { locale } = useI18n()
   const copy = profileOverviewCopy[locale === 'el' ? 'el' : 'en']
   const ui = profileUiCopy[locale === 'el' ? 'el' : 'en']
   return <section className={styles.panel}>
@@ -22,7 +23,7 @@ export function RecentListings({ data }: { data: ProfileOverview }) {
     </div> : <ul>{data.listings.map(listing => <li key={listing.id} className={styles.listingRow}>
       <div><Link href={`/dashboard/listings/${encodeURIComponent(listing.id)}`}>{listing.title}</Link>
         <small>{listing.moderation_suspended ? copy.held : listing.status === 'active' ? copy.active : listing.status === 'sold' ? copy.sold : copy.paused}</small></div>
-      <span>{formatCurrency(Number(listing.price), 'EUR')}</span>
+      <span>{formatPublishedListingPrice(Number(listing.price), listing.description, locale, listing.main_category, listing.sub_category)}</span>
     </li>)}</ul>}
     <Button asChild variant="outline" className="mt-5 min-h-11"><Link href="/dashboard/listings">{copy.manageListings}<ArrowRight size={15} aria-hidden="true" /></Link></Button>
   </section>

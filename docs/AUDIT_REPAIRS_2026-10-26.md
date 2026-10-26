@@ -70,6 +70,23 @@ New security-definer functions use an empty search path, explicit qualified name
 
 Existing Supabase advisor categories predate these changes: mutable search paths in legacy functions, extension placement/PostGIS metadata, GraphQL exposure warnings, legacy function execution warnings and leaked-password-protection configuration. Their presence is recorded separately from this repair set; the database is not certified free of security advisories. No extension-owned objects, live credentials or authentication settings were modified. Advisor comparison added only the expected informational `rls_enabled_no_policy` notice for the deliberately service-only request table; warning/error findings were unchanged.
 
+## Description extraction follow-up
+
+The two descriptions reported in screenshots now have permanent parser, form and desktop/mobile browser regressions:
+
+| Original description | Result |
+| --- | --- |
+| `πωλειται κινητο smasung s25 ultra ελαχειστα χρησιμοποιημενοαπο 220 στα 130` | Items / Sell; `Samsung μεταχειρισμένο s25 ultra`; final price `130€`; brand, condition, item, category and current-price tags. |
+| `μπορω να αναλαβω  ηλικιωμενους κατοικον με 10 ευρω την ωρα` | Services / I can; `Φροντίδα ηλικιωμένων κατ’ οίκον`; `10€/ώρα`; care, home, category and hourly-price tags. |
+
+Controlled spelling/spacing corrections apply only to recognition; the original description is retained. Explicit discounts choose the final amount, while ranges, conflicting amounts and unsupported currencies remain editable rather than guessed. Hour/day/month rates retain their basis in the form and saved-listing displays. Manually changed amounts update price tags without losing the unit.
+
+Existing checkout treats a listing price as the complete payment. Per-unit listings therefore show an agreement hint and cannot create a fixed-total Stripe intent or milestone proposal. There is no new quantity-based billing feature or database migration; the saved description remains the source of rate terms even if its smart tag is removed.
+
+Clearing a per-unit price now produces a validation message before create/update writes. Older per-unit listings with a zero amount show that the price needs confirmation, including in payment context, instead of being presented as free. Explicit Items / Free listings retain their giveaway behavior.
+
+Final follow-up verification: **124 Vitest files / 1,058 tests passed**, **6/6 production Playwright tests passed** across desktop and mobile, fresh TypeScript check passed, and full ESLint reported **0 errors / 312 existing warnings**. The browser journey now includes rejected blank hourly prices and successful manual correction to 12/hour against an isolated mocked backend. Real authenticated in-app browser inspection confirmed both original examples without publishing a live listing. Independent review verified the payment guards, zero-price handling and explicit Free exception. Screenshots and command logs are stored with this task's local artifacts.
+
 ## Remaining checks
 
 - Deploy the reviewed frontend when separately authorized; run hosted CI.

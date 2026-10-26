@@ -30,6 +30,7 @@ export const paymentFlowCopy = {
 };
 
 const greekErrors: Record<string, string> = {
+  'This listing uses a rate per unit. Agree on a total in chat before online payment.': 'Αυτή η αγγελία έχει χρέωση ανά μονάδα. Συμφωνήστε συνολικό ποσό στη συνομιλία πριν από online πληρωμή.',
   'Payments are not configured.': 'Οι πληρωμές δεν είναι διαθέσιμες αυτή τη στιγμή.',
   'Payments are currently disabled': 'Οι πληρωμές δεν είναι διαθέσιμες αυτή τη στιγμή.',
   'Sign in to continue to checkout.': 'Συνδέσου για να συνεχίσεις στην πληρωμή.',

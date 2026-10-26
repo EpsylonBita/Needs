@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useI18n } from '@/contexts/i18n-context'
 import { Button } from '@/components/ui/button'
 import { orderMoney } from '@/components/features/orders/order-copy'
+import { formatPublishedListingPrice } from '@/lib/listings/price-policy'
 
 const copies = {
   en: { user: 'NEEDS member', reputation: 'Reputation', rating: 'Rating', noReviews: 'No reviews', dashboard: 'Dashboard', listings: 'Listings', title: 'Title', price: 'Price', status: 'Status', noListings: 'No public listings.', active: 'Available', sold: 'Sold', paused: 'Paused', closed: 'Closed', unavailableStatus: 'Unavailable', review: 'Leave a Review', payment: 'Completed payment', comment: 'Review comment', optional: 'Comment (optional)', submit: 'Submit Review', submitting: 'Submitting…', submitted: 'Your review was submitted.', integer: 'Choose an integer rating from 1 to 5.', session: 'Your session changed. Sign in again before submitting your review.', submitError: 'Could not submit your review. Try again.', paymentsError: 'Could not load your completed payments. Refresh and try again.', reviewsError: 'Could not load your previous reviews. Refresh and try again.', loading: 'Loading profile…', loadError: 'This profile could not be loaded. Try again.', unavailable: 'This profile is not available.', retry: 'Try again', browse: 'Explore listings', duplicate: 'You have already reviewed this payment.' },
@@ -19,7 +20,7 @@ const copies = {
 }
 
 type ProfileRow = { id: string; display_name?: string; avatar_url?: string; reputation?: number }
-type ListingRow = { id: string; title: string; price: number; status: string }
+type ListingRow = { id: string; title: string; description?: string; main_category?: string; sub_category?: string; price: number; status: string }
 type ReviewPayment = { id: string; listing_id: string; title: string; amount: number; currency: string }
 
 export default function PublicProfilePage() {
@@ -80,7 +81,7 @@ function ProfileContent({ id, viewerId }: { id: string; viewerId?: string }) {
       }
       const { data: ls, error: listingsError } = await supabase
         .from('listings')
-        .select('id,title,price,status')
+        .select('id,title,description,main_category,sub_category,price,status')
         .eq('seller_id', id)
         .order('created_at', { ascending: false })
       if (cancelled) return
@@ -182,7 +183,7 @@ function ProfileContent({ id, viewerId }: { id: string; viewerId?: string }) {
               {listings.map((l) => (
                 <tr key={l.id} className="border-t">
                   <td className="p-3"><Link className="inline-flex min-h-11 items-center text-primary" href={`/listings/${encodeURIComponent(l.id)}`}>{l.title}</Link></td>
-                  <td className="whitespace-nowrap p-3">{orderMoney(Number(l.price), 'eur', language)}</td>
+                  <td className="whitespace-nowrap p-3">{formatPublishedListingPrice(Number(l.price), l.description, language, l.main_category, l.sub_category)}</td>
                   <td className="p-3">{({ active: copy.active, sold: copy.sold, paused: copy.paused, inactive: copy.paused, closed: copy.closed } as Record<string, string>)[l.status] || copy.unavailableStatus}</td>
                 </tr>
               ))}

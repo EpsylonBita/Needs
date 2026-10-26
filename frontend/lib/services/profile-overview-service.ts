@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase/client'
 
 export type OverviewListing = {
-  id: string; title: string; price: number; status: string; moderation_suspended: boolean
+  id: string; title: string; description?: string; main_category?: string; sub_category?: string; price: number; status: string; moderation_suspended: boolean
 }
 export type OverviewReview = { id: string; rating: number; comment: string | null; created_at: string }
 export type ProfileOverview = {
@@ -27,7 +27,7 @@ export async function getProfileOverview(expectedUserId: string, signal: AbortSi
     supabase.from('chat_participants').select('chat_id', { count: 'exact', head: true }).eq('user_id', profileId).abortSignal(signal),
     supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('seller_id', profileId).abortSignal(signal),
     supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('user_id', profileId).eq('read', false).abortSignal(signal),
-    supabase.from('listings').select('id,title,price,status,moderation_suspended').eq('seller_id', profileId).order('created_at', { ascending: false }).order('id', { ascending: false }).limit(5).abortSignal(signal),
+    supabase.from('listings').select('id,title,description,main_category,sub_category,price,status,moderation_suspended').eq('seller_id', profileId).order('created_at', { ascending: false }).order('id', { ascending: false }).limit(5).abortSignal(signal),
     supabase.from('reviews').select('id,rating,comment,created_at').eq('seller_id', profileId).order('created_at', { ascending: false }).order('id', { ascending: false }).limit(5).abortSignal(signal),
   ])
   signal.throwIfAborted()

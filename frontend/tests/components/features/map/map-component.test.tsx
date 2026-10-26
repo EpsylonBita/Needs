@@ -73,6 +73,27 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 describe('map interaction and accessibility', () => {
+  it('labels stored zero-rate markers and previews as needing confirmation', async () => {
+    render(<ListingMap results={[{ ...listing, title: 'Home care', description: 'Home care 10€/hour', price: 0, category: 'Services', subcategory: 'I can' }]} />);
+    await userEvent.click(screen.getByRole('button', { name: 'View listing: Home care · Price needs confirmation' }));
+    expect(screen.getByRole('dialog', { name: 'Home care' })).toHaveTextContent('Price needs confirmation');
+    expect(screen.queryByText('Free')).not.toBeInTheDocument();
+  });
+
+  it('retains Free map markers and previews for explicit Items/Free listings', async () => {
+    render(<ListingMap results={[{ ...listing, description: 'Previously rented at 10€/hour', price: 0, subcategory: 'Free' }]} />);
+    await userEvent.click(screen.getByRole('button', { name: 'View listing: Bicycle · Free' }));
+    expect(screen.getByRole('dialog', { name: 'Bicycle' })).toHaveTextContent('Free');
+    expect(screen.queryByText('Price needs confirmation')).not.toBeInTheDocument();
+  });
+
+  it('retains the rate basis in map markers and their listing previews', async () => {
+    render(<ListingMap results={[{ ...listing, title: 'Home care', description: 'Home care 10€/hour', price: 10 }]} />)
+    const marker = screen.getByRole('button', { name: 'View listing: Home care · €10/hour' })
+    await userEvent.click(marker)
+    expect(screen.getByRole('dialog', { name: 'Home care' })).toHaveTextContent('€10.00/hour')
+  })
+
   it('starts at Athens with zoom controls and requests location only from the explicit locate button', async () => {
     render(<ListingMap results={[]} />);
     expect(state.maps[0].options.center).toEqual([23.7275, 37.9838]);

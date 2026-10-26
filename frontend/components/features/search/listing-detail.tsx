@@ -7,12 +7,13 @@ import { useAuth } from '@/contexts/auth-context';
 import { useProfile } from '@/contexts/profile-context';
 import { useI18n } from '@/contexts/i18n-context';
 import { useListingSearch } from './use-listing-search';
+import { formatPublishedListingPrice } from '@/lib/listings/price-policy';
 
 export function ListingDetail({ id }: { id: string }) {
   const { data, isLoading, error, retry } = useListingSearch(new URLSearchParams({ listingId: id }).toString());
   const { user } = useAuth();
   const { profile, isLoading: profileLoading } = useProfile();
-  const { t, formatCurrency, locale } = useI18n();
+  const { t, locale } = useI18n();
   const listing = data?.listings[0];
 
   if (isLoading) return <p role="status" className="text-center text-muted-foreground">{t('common.loading', 'Loading...')}</p>;
@@ -30,7 +31,7 @@ export function ListingDetail({ id }: { id: string }) {
       ))}</div>}
       <p className="text-sm text-muted-foreground whitespace-pre-wrap">{listing.description}</p>
       <div className="mt-2 space-y-2">
-        <div className="text-sm font-medium">{formatCurrency(listing.price, 'EUR')}</div>
+        <div className="text-sm font-medium">{formatPublishedListingPrice(listing.price, listing.description, locale, listing.main_category, listing.sub_category)}</div>
         {listing.sellerRating !== undefined && <div className="text-xs text-muted-foreground">{t('listing.sellerRating', 'Seller rating:')} {listing.sellerRating.toFixed(2)}</div>}
         <div className="text-xs text-muted-foreground">{listing.main_category} • {listing.sub_category}</div>
         <div className="text-sm text-muted-foreground">{typeof listing.address === 'string' ? listing.address : listing.address?.label}</div>

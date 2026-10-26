@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowUpRight, ImageIcon, MapPin, X } from 'lucide-react';
 
 import { useI18n } from '@/contexts/i18n-context';
+import { formatPublishedListingPrice, listingPriceNeedsConfirmation } from '@/lib/listings/price-policy';
 
 export interface MapListing {
   id: string;
@@ -18,7 +19,7 @@ export interface MapListing {
 }
 
 export function MapListingPreview({ listing, onClose }: { listing: MapListing; onClose: () => void }) {
-  const { t, formatCurrency } = useI18n();
+  const { t, locale } = useI18n();
   const [failedImage, setFailedImage] = useState<string | null>(null);
   const imageUrl = listing.imageUrl;
   const safeImage = imageUrl && imageUrl !== failedImage && (/^https?:\/\//i.test(imageUrl) || (imageUrl.startsWith('/') && !imageUrl.startsWith('//'))) ? imageUrl : null;
@@ -27,7 +28,7 @@ export function MapListingPreview({ listing, onClose }: { listing: MapListing; o
     Sell: t('searchModern.sell', 'Sell'), Buy: t('searchModern.buy', 'Buy'), Free: t('searchModern.free', 'Free'),
     'I want': t('searchModern.want', 'I want'), 'I will': t('searchModern.will', 'I will'), 'I can': t('searchModern.can', 'I can'),
   };
-  const price = listing.price === 0 ? t('map.free', 'Free') : typeof listing.price === 'number' && Number.isFinite(listing.price) ? formatCurrency(listing.price, 'EUR') : t('map.priceOnRequest', 'Ask for price');
+  const price = listing.price === 0 && !listingPriceNeedsConfirmation(listing.price, listing.description, listing.category, listing.subcategory) ? t('map.free', 'Free') : typeof listing.price === 'number' && Number.isFinite(listing.price) ? formatPublishedListingPrice(listing.price, listing.description, locale, listing.category, listing.subcategory) : t('map.priceOnRequest', 'Ask for price');
 
   return <section className="needs-map-preview" role="dialog" aria-label={listing.title} aria-modal="false">
     <button type="button" className="needs-map-preview-close" aria-label={t('map.close', 'Close')} onClick={onClose}><X aria-hidden="true" className="h-4 w-4" /></button>

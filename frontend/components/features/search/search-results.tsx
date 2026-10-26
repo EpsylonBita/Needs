@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useI18n } from '@/contexts/i18n-context';
 import { useSearchState } from '@/hooks/use-search-state';
+import { formatPublishedListingPrice, listingPriceNeedsConfirmation } from '@/lib/listings/price-policy';
 
 import { SearchMap } from './search-map';
 import { useListingSearch, type SearchListing } from './use-listing-search';
@@ -26,7 +27,7 @@ const subcategories: Record<string, string[]> = {
 };
 
 function ListingCard({ listing }: { listing: SearchListing }) {
-  const { t, formatCurrency } = useI18n();
+  const { t, locale } = useI18n();
   const [failedImage, setFailedImage] = useState<string | null>(null);
   const imageUrl = listing.listing_images?.find(image => image.main)?.url || listing.listing_images?.[0]?.url;
   const safeImage = imageUrl && (/^https?:\/\//i.test(imageUrl) || (imageUrl.startsWith('/') && !imageUrl.startsWith('//'))) && imageUrl !== failedImage ? imageUrl : null;
@@ -50,7 +51,7 @@ function ListingCard({ listing }: { listing: SearchListing }) {
       <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">{listing.description}</p>
       <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
         {address && <span className="inline-flex min-w-0 max-w-full items-center gap-1 text-xs text-muted-foreground"><MapPin className="h-3 w-3 shrink-0" aria-hidden="true" /><span className="truncate">{address}</span></span>}
-        {typeof listing.price === 'number' && <span className="ml-auto shrink-0 text-base font-semibold text-primary">{listing.price === 0 ? t('searchModern.free', 'Free') : formatCurrency(listing.price, 'EUR')}</span>}
+        {typeof listing.price === 'number' && <span className="ml-auto shrink-0 text-base font-semibold text-primary">{listing.price === 0 && !listingPriceNeedsConfirmation(listing.price, listing.description, listing.main_category, listing.sub_category) ? t('searchModern.free', 'Free') : formatPublishedListingPrice(listing.price, listing.description, locale, listing.main_category, listing.sub_category)}</span>}
       </div>
     </div>
   </Link>;

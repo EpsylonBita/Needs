@@ -67,6 +67,41 @@ async function fillDraft(page: Page) {
   await page.getByRole('option', { name: 'Athens, Attica, Greece', exact: true }).click();
 }
 
+test('extracts the reported Greek phone discount and hourly care service', async ({ page }) => {
+  const backend = await fixtureBackend(page);
+  await signedInListing(page);
+  await page.getByRole('button', { name: 'Skip photos', exact: true }).click();
+  const note = page.getByLabel('What would you like to list?', { exact: true });
+  await note.fill('πωλειται κινητο smasung s25 ultra ελαχειστα χρησιμοποιημενοαπο 220 στα 130');
+  await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Samsung μεταχειρισμένο s25 ultra');
+  await expect(page.getByLabel('Category', { exact: true })).toHaveValue('Items');
+  await expect(page.getByLabel('Listing type', { exact: true })).toHaveValue('Sell');
+  await expect(page.getByLabel('Price (€)', { exact: true })).toHaveValue('130€');
+  await expect(page.getByRole('button', { name: '130€', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
+  await note.fill('μπορω να αναλαβω  ηλικιωμενους κατοικον με 10 ευρω την ωρα');
+  await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Φροντίδα ηλικιωμένων κατ’ οίκον');
+  await expect(page.getByLabel('Category', { exact: true })).toHaveValue('Services');
+  await expect(page.getByLabel('Listing type', { exact: true })).toHaveValue('I can');
+  await expect(page.getByLabel('Price (€)', { exact: true })).toHaveValue('10€');
+  await expect(page.getByText('Per hour, as stated in your description. Agree the total before payment.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '10€/hour', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: '130€', exact: true })).toHaveCount(0);
+  await page.getByRole('combobox', { name: 'Location', exact: true }).fill('Athens');
+  await page.getByRole('option', { name: 'Athens, Attica, Greece', exact: true }).click();
+  await page.getByLabel('Price (€)', { exact: true }).fill('');
+  await page.getByRole('button', { name: 'Publish listing', exact: true }).click();
+  await expect(page.getByText('Enter a price greater than 0 for this rate.', { exact: true })).toBeVisible();
+  expect(backend.writes).toHaveLength(0);
+  await page.getByLabel('Price (€)', { exact: true }).fill('12');
+  await expect(page.getByRole('button', { name: '12€/hour', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Publish listing', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'New listing' })).toHaveCount(0);
+  expect(backend.writes).toHaveLength(1);
+  expect(backend.writes[0]).toMatchObject({ price: 12, description: 'μπορω να αναλαβω  ηλικιωμενους κατοικον με 10 ευρω την ωρα' });
+  expect(backend.tagWrites.flat().map(value => value.tag)).toContain('12€/hour');
+});
+
 test('sign in, optional photo preview, smart draft and successful publication', async ({ page }) => {
   const backend = await fixtureBackend(page);
   const errors: string[] = [];

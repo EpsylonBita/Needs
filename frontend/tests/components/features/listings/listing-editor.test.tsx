@@ -67,6 +67,38 @@ beforeEach(() => {
 afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear()); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
 describe('editing an owned listing', () => {
+  it.each(['en', 'el'])('keeps a cleared rate draft and shows localized validation in %s', async locale => {
+    state.locale = locale;
+    state.get.mockResolvedValue({ ...fixture(), main_category: 'Services', sub_category: 'I can', description: 'Home care 10€/hour', price: 10 });
+    mount();
+    const price = await screen.findByLabelText(locale === 'el' ? 'Τιμή (€) / ώρα' : 'Price (€) / hour');
+    fireEvent.change(price, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: locale === 'el' ? 'Αποθήκευση αλλαγών' : 'Save changes' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(locale === 'el' ? 'Συμπλήρωσε τιμή μεγαλύτερη από 0' : 'Enter a price greater than 0');
+    expect(state.update).not.toHaveBeenCalled();
+    expect(price).toHaveValue('');
+    expect(screen.getByLabelText(locale === 'el' ? 'Περιγραφή' : 'Description')).toHaveValue('Home care 10€/hour');
+  });
+
+  it('saves explicit Free even when the description mentions an earlier rate', async () => {
+    state.get.mockResolvedValue({ ...fixture(), description: 'Previously rented at 10€/hour', sub_category: 'Free', price: 0 });
+    mount();
+    expect(await screen.findByLabelText('Price (€)')).toHaveValue('0');
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(state.update).toHaveBeenCalledWith('listing-one', expect.objectContaining({ sub_category: 'Free', price: 0 }), 'account-one'));
+  });
+
+  it('preserves a stored hourly basis while editing its amount', async () => {
+    const rate = { ...fixture(), main_category: 'Services', sub_category: 'I can', description: 'Home care 10€/hour', price: 10 }
+    state.get.mockResolvedValue(rate)
+    mount()
+    expect(await screen.findByLabelText('Price (€) / hour')).toHaveValue('10')
+    expect(screen.getByText(/Rate per unit, as stated in the description/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Price (€) / hour'), { target: { value: '15' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(state.update).toHaveBeenCalledWith('listing-one', expect.objectContaining({ price: 15, description: 'Home care 10€/hour' }), 'account-one'))
+  })
+
   it('prefills all saved details and saves the existing location/tags for the exact account', async () => {
     const view = mount()
     expect(await screen.findByLabelText('Title')).toHaveValue('Wooden desk')

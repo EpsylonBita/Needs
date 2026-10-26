@@ -20,6 +20,7 @@ import { createListing, deleteListing, parseListingPrice } from '@/lib/services/
 import { uploadListingImages, validateListingImages } from '@/lib/services/storage-service';
 import { getLocationAreaTag } from '@/lib/services/location-suggestions';
 import { witService } from '@/lib/services/wit-service';
+import { listingPriceNeedsConfirmation } from '@/lib/listings/price-policy';
 import { CategoryTagsPicker } from './category-tags-picker';
 import { ImageUploader } from './image-uploader';
 import { LocationPicker } from './location-picker';
@@ -27,6 +28,11 @@ import { LocationPicker } from './location-picker';
 type FormValues = { title: string; description: string; category: string; subcategory: string; price: string; contactNumber: string; location: string };
 type DraftField = 'title' | 'category' | 'subcategory' | 'price' | 'contactNumber' | 'location';
 const defaults: FormValues = { title: '', description: '', category: '', subcategory: '', price: '', contactNumber: '', location: '' };
+const priceUnits = {
+  hour: { el: 'ώρα', en: 'hour', hintEl: 'Ανά ώρα, όπως γράφεις στην περιγραφή. Συμφωνήστε το συνολικό ποσό πριν την πληρωμή.', hintEn: 'Per hour, as stated in your description. Agree the total before payment.' },
+  day: { el: 'ημέρα', en: 'day', hintEl: 'Ανά ημέρα, όπως γράφεις στην περιγραφή. Συμφωνήστε το συνολικό ποσό πριν την πληρωμή.', hintEn: 'Per day, as stated in your description. Agree the total before payment.' },
+  month: { el: 'μήνα', en: 'month', hintEl: 'Ανά μήνα, όπως γράφεις στην περιγραφή. Συμφωνήστε το συνολικό ποσό πριν την πληρωμή.', hintEn: 'Per month, as stated in your description. Agree the total before payment.' },
+};
 
 export function CreateAdDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   return open ? <CreateAdForm onOpenChange={onOpenChange} /> : null;
@@ -51,7 +57,7 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
   const [showMap, setShowMap] = useState(false);
   const [coordinates, setCoordinates] = useState<[number, number] | null>(null);
   const [isLocating, setIsLocating] = useState(false);
-  const [extracted, setExtracted] = useState<{ tags: string[]; smartTags: string[]; price?: string; category?: string }>({ tags: [], smartTags: [] });
+  const [extracted, setExtracted] = useState<{ tags: string[]; smartTags: string[]; price?: string; priceUnit?: keyof typeof priceUnits; category?: string }>({ tags: [], smartTags: [] });
   const [locationArea, setLocationArea] = useState<string | undefined>();
   const manual = useRef(new Set<DraftField>());
   const [tagEdits, setTagEdits] = useState<{ added: string[]; removed: string[] }>({ added: [], removed: [] });
@@ -69,7 +75,8 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
     price: z.string().refine(value => { try { parseListingPrice(value); return true; } catch { return false; } }, el ? 'Βάλε έγκυρη τιμή σε ευρώ, π.χ. 25,50.' : 'Enter a valid price in euros, e.g. 25.50.'),
     contactNumber: z.string().trim().max(50).refine(value => !value || /^\+?[\d ()-]{7,25}$/.test(value), el ? 'Έλεγξε τον αριθμό τηλεφώνου.' : 'Check the phone number.'),
     location: z.string().trim().min(3, el ? 'Γράψε την περιοχή σου.' : 'Enter your area.'),
-  }).refine(data => !!CATEGORY_STRUCTURE[data.category as keyof typeof CATEGORY_STRUCTURE]?.subcategories.includes(data.subcategory), { path: ['subcategory'], message: el ? 'Διάλεξε έγκυρο είδος για αυτήν την κατηγορία.' : 'Choose a valid type for this category.' });
+  }).refine(data => !!CATEGORY_STRUCTURE[data.category as keyof typeof CATEGORY_STRUCTURE]?.subcategories.includes(data.subcategory), { path: ['subcategory'], message: el ? 'Διάλεξε έγκυρο είδος για αυτήν την κατηγορία.' : 'Choose a valid type for this category.' })
+    .refine(data => { try { return !listingPriceNeedsConfirmation(parseListingPrice(data.price), data.description, data.category, data.subcategory); } catch { return true; } }, { path: ['price'], message: el ? 'Συμπλήρωσε τιμή μεγαλύτερη από 0 για τη χρέωση ανά μονάδα.' : 'Enter a price greater than 0 for this rate.' });
   const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { ...defaults, contactNumber: profilePhone } });
   const { register, handleSubmit, setValue, getValues, formState: { errors } } = form;
   const description = useWatch({ control: form.control, name: 'description' });
@@ -79,15 +86,19 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
   const price = useWatch({ control: form.control, name: 'price' });
   const contactNumber = useWatch({ control: form.control, name: 'contactNumber' });
   const locationName = useWatch({ control: form.control, name: 'location' });
+  const priceUnit = selectedSubcategory === 'Free' ? undefined : extracted.priceUnit;
+  const priceHelp = selectedSubcategory === 'Free' ? (el ? 'Η αγγελία είναι δωρεάν.' : 'This listing is free.')
+    : priceUnit ? priceUnits[priceUnit][el ? 'hintEl' : 'hintEn']
+      : (el ? 'Προαιρετικό. Συμπλήρωσε τη συνολική τιμή, εφόσον υπάρχει.' : 'Optional. Enter the total price, if applicable.');
   const analysis = useMemo(() => {
-    const tags = [...extracted.tags, ...extracted.smartTags].filter(tag => tag !== extracted.price && tag !== extracted.category);
+    const tags = [...extracted.tags, ...extracted.smartTags].filter(tag => tag !== extracted.price && tag !== extracted.category && !/^\d+(?:[.,]\d+)?€(?:\/.+)?$/u.test(tag));
     if (selectedCategory) tags.push(el ? (selectedCategory === 'Items' ? 'Αντικείμενα' : 'Υπηρεσίες') : selectedCategory);
     if (price.trim()) {
-      try { tags.push(`${parseListingPrice(price)}€`); } catch { /* An invalid price is never advertised as a tag. */ }
+      try { tags.push(`${parseListingPrice(price)}€${priceUnit ? `/${priceUnits[priceUnit][el ? 'el' : 'en']}` : ''}`); } catch { /* An invalid price is never advertised as a tag. */ }
     }
     if (locationArea) tags.push(locationArea);
     return { tags: [], smartTags: [...new Map(tags.filter(tag => tag.trim() && tag.length <= 50).map(tag => [tag.toLocaleLowerCase(), tag])).values()].slice(0, 20) };
-  }, [extracted, selectedCategory, price, locationArea, el]);
+  }, [extracted, selectedCategory, price, priceUnit, locationArea, el]);
   const selectedTags = useMemo(() => [...new Map([...tagEdits.added, ...analysis.smartTags.filter(tag => !tagEdits.removed.includes(tag))].map(tag => [tag.toLocaleLowerCase(), tag])).values()].slice(0, 20), [analysis, tagEdits]);
   useEffect(() => { if (open && step === 2) form.setFocus('description'); }, [open, step, form]);
 
@@ -115,7 +126,7 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
         if (!manual.current.has('location') && getValues('location') !== (result.location ?? '')) {
           ++revision.current; setCoordinates(null); setLocationArea(undefined); setValue('location', result.location ?? '');
         }
-        setExtracted({ tags: result.tags, smartTags: result.smartTags, price: result.price, category: result.category });
+        setExtracted({ tags: result.tags, smartTags: result.smartTags, price: result.price, priceUnit: result.priceUnit, category: result.category });
       } catch {
         if (!cancelled) setError(el ? 'Η αυτόματη συμπλήρωση δεν είναι διαθέσιμη. Συμπλήρωσε τα πεδία.' : 'Automatic suggestions are unavailable. You can fill in the fields.');
       } finally { if (!cancelled) setAnalyzedDescription(description); }
@@ -269,7 +280,7 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
             </div>
             <CategoryTagsPicker selectedCategory={selectedCategory} selectedSubcategory={selectedSubcategory} selectedTags={selectedTags} analysis={analysis} isLoadingTags={isAnalyzing} onCategorySelect={value => { manual.current.add('category'); manual.current.add('subcategory'); setValue('category', value, { shouldValidate: true }); setValue('subcategory', ''); }} onSubcategorySelect={value => { manual.current.add('category'); manual.current.add('subcategory'); setValue('subcategory', value, { shouldValidate: true }); if (value === 'Free') { manual.current.add('price'); setValue('price', '0'); } }} onToggleTag={toggleTag} onAddTag={tag => { if (!selectedTags.includes(tag)) toggleTag(tag); }} categoryError={errors.category?.message} subcategoryError={errors.subcategory?.message}>
             <div><Label htmlFor="create-title">{el ? 'Τίτλος' : 'Title'}</Label><Input id="create-title" {...register('title')} onChange={event => { manual.current.add('title'); void register('title').onChange(event); }} {...fieldA11y('title')} maxLength={200} className="mt-2 min-h-11 text-base" />{fieldError('title')}</div>
-            <div><Label htmlFor="create-price">{el ? 'Τιμή (€)' : 'Price (€)'}</Label><Input id="create-price" {...register('price')} onChange={event => { manual.current.add('price'); void register('price').onChange(event); }} {...fieldA11y('price')} disabled={selectedSubcategory === 'Free'} inputMode="decimal" placeholder="0" className="mt-2 min-h-11 text-base" /><p className="mt-1 text-xs text-muted-foreground">{selectedSubcategory === 'Free' ? (el ? 'Η αγγελία είναι δωρεάν.' : 'This listing is free.') : (el ? 'Προαιρετικό. Συμπλήρωσε τη συνολική τιμή, εφόσον υπάρχει.' : 'Optional. Enter the total price, if applicable.')}</p>{fieldError('price')}</div>
+            <div><Label htmlFor="create-price">{el ? 'Τιμή (€)' : 'Price (€)'}</Label><Input id="create-price" {...register('price')} onChange={event => { manual.current.add('price'); void register('price').onChange(event); }} {...fieldA11y('price')} aria-describedby={`create-price-help${errors.price ? ' create-price-error' : ''}`} disabled={selectedSubcategory === 'Free'} inputMode="decimal" placeholder="0" className="mt-2 min-h-11 text-base" /><p id="create-price-help" className="mt-1 text-xs text-muted-foreground">{priceHelp}</p>{fieldError('price')}</div>
             </CategoryTagsPicker>
             <LocationPicker locationName={locationName} showMap={showMap} coordinates={coordinates} isLocating={isLocating} errorMessage={errors.location?.message} onLocationNameChange={changeLocation} onLocationSelect={selectLocation} onToggleMap={() => { if (!process.env.NEXT_PUBLIC_MAPBOX_TOKEN) setError(el ? 'Ο χάρτης δεν είναι διαθέσιμος.' : 'The map is unavailable.'); else setShowMap(value => !value); }} onUseCurrentLocation={geolocate} />
             <div><Label htmlFor="create-contact">{el ? 'Τηλέφωνο (προαιρετικό)' : 'Phone (optional)'}</Label><Input id="create-contact" {...register('contactNumber')} onChange={event => { manual.current.add('contactNumber'); void register('contactNumber').onChange(event); }} {...fieldA11y('contactNumber')} type="tel" autoComplete="tel" maxLength={50} className="mt-2 min-h-11 text-base" /><p className="mt-1 text-xs text-muted-foreground">{profilePhone && contactNumber === profilePhone ? (el ? 'Συμπληρώθηκε από το προφίλ σου. Θα εμφανίζεται στην αγγελία· μπορείς να το αλλάξεις ή να το αφαιρέσεις.' : 'Filled from your profile. Visible on your listing; you can change or remove it.') : (el ? 'Θα εμφανίζεται στην αγγελία σου. Μπορείς να επικοινωνείς μόνο με μηνύματα.' : 'Visible on your listing. You can use messages only instead.')}</p>{fieldError('contactNumber')}</div>

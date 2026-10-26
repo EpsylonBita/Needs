@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { NewListingButton } from '@/components/features/ads/new-listing-button'
 import { getMyListings, updateListingStatus, deleteListing, type OwnedListing } from '@/lib/services/listing-service'
 import { ownerListingCopy, ownerStatus, statusLabel } from '@/components/features/listings/owner-listing-copy'
+import { formatPublishedListingPrice } from '@/lib/listings/price-policy'
 import styles from '@/components/features/listings/owner-listings.module.css'
 
 type Filter = 'all' | 'active' | 'paused' | 'sold' | 'held'
@@ -43,7 +44,7 @@ function MyListings({ userId }: { userId: string }) {
   })
   const act = (id: string, action: 'active' | 'sold' | 'suspended' | 'delete') => { setFeedback(null); mutation.mutate({ id, action }) }
   const filtered = rows.filter(listing => filter === 'all' || ownerStatus(listing) === filter)
-  const money = (listing: OwnedListing) => listing.sub_category === 'Free' ? copy.free : new Intl.NumberFormat(locale === 'el' ? 'el-GR' : 'en-GB', { style: 'currency', currency: 'EUR' }).format(listing.price)
+  const money = (listing: OwnedListing) => listing.sub_category === 'Free' ? copy.free : formatPublishedListingPrice(listing.price, listing.description, locale, listing.main_category, listing.sub_category)
 
   return <div className={styles.page}>
     <Link href="/profile" className={styles.back}><ArrowLeft size={15} />{copy.back}</Link>

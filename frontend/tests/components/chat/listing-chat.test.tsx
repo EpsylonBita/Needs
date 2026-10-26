@@ -36,6 +36,27 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('listing conversation transactions', () => {
+  it.each(['en', 'el'])('does not present a stored zero-rate listing as a free exchange in %s', async locale => {
+    state.locale = locale;
+    state.context = { ...state.context, requiresAgreement: true, priceNeedsConfirmation: true, priceUnit: 'hour', amount: 0, canPay: false, milestonesEnabled: true };
+    render(panel());
+    expect(await screen.findByText(locale === 'el' ? /Η τιμή χρειάζεται επιβεβαίωση/ : /Price needs confirmation/)).toBeInTheDocument();
+    expect(screen.queryByText(/free exchange|δωρεάν παραχώρηση/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Get|Αγορά|Pay provider|Πληρωμή παρόχου/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Add Milestone|Προσθήκη σταδίου/ })).not.toBeInTheDocument();
+  });
+
+  it.each(['en', 'el'])('explains hourly pricing and hides fixed-total checkout and milestones in %s', async locale => {
+    state.locale = locale
+    state.context = { ...state.context, requiresAgreement: true, priceUnit: 'hour', amount: 10, canPay: false, milestonesEnabled: true, subCategory: 'I can' }
+    render(panel())
+    expect(await screen.findByText(locale === 'el' ? /10,00.*€\/ώρα/ : /€10.00\/hour/)).toBeInTheDocument()
+    expect(screen.getByText(locale === 'el' ? /Συμφωνήστε το συνολικό κόστος/ : /Agree on the total cost/)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Get|Αγορά|Pay provider|Πληρωμή παρόχου/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Add Milestone|Προσθήκη σταδίου/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/free exchange|δωρεάν παραχώρηση/)).not.toBeInTheDocument()
+  })
+
   it('clears listing actions when switching to a general conversation', async () => {
     const view = render(panel())
     await screen.findByRole('link', { name: 'View Seller' })

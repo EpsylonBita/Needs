@@ -17,6 +17,18 @@ const edit: CreateListingInput = { title: row.title, description: row.descriptio
 beforeEach(() => { state.userId = 'account-one'; state.rpc.mockReset().mockResolvedValue({ data: row, error: null }) })
 
 describe('owner listing reads and edits', () => {
+  it.each(['', undefined, 0])('rejects a missing rate amount %s before the owner update RPC', async price => {
+    await expect(updateListing(row.id, { ...edit, description: 'Home care 10€/hour', main_category: 'Services', sub_category: 'I can', price }, 'account-one')).rejects.toThrow('positive price');
+    expect(state.rpc).not.toHaveBeenCalled();
+  });
+
+  it('retains explicit Free when the description contains an earlier rate', async () => {
+    const description = 'Previously rented at 10€/hour';
+    state.rpc.mockResolvedValue({ data: { ...row, sub_category: 'Free', price: 0, description }, error: null });
+    await updateListing(row.id, { ...edit, description, sub_category: 'Free', price: '' }, 'account-one');
+    expect(state.rpc.mock.calls[0][1].p_input).toMatchObject({ price: 0, sub_category: 'Free', description });
+  });
+
   it('loads actual own listings and preserves moderation, images and history restrictions', async () => {
     state.rpc.mockResolvedValueOnce({ data: [row], error: null })
     await expect(getMyListings('account-one')).resolves.toEqual([row])

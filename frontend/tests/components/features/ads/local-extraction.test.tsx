@@ -40,6 +40,80 @@ function png(name = 'desk.png') {
 }
 
 describe('reviewing an automatically extracted listing draft', () => {
+  it.each(['', '0'])('keeps a rate draft with an invalid amount %j until its price is corrected', async price => {
+    const note = 'μπορω να αναλαβω ηλικιωμενους κατοικον με 10 ευρω την ωρα';
+    openDetails();
+    await describeListing(note);
+    fireEvent.change(screen.getByLabelText('Price (€)'), { target: { value: price } });
+    fireEvent.change(screen.getByLabelText('Location'), { target: { value: 'Athens' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Publish listing' }));
+    expect(await screen.findByText('Enter a price greater than 0 for this rate.')).toBeVisible();
+    expect(boundary.create).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Price (€)')).toHaveValue(price);
+    expect(screen.getByLabelText('What would you like to list?')).toHaveValue(note);
+    fireEvent.change(screen.getByLabelText('Price (€)'), { target: { value: '12' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Publish listing' }));
+    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ price: '12', description: note })));
+  });
+
+  it('lets an explicit Items/Free choice override rate wording', async () => {
+    openDetails();
+    await describeListing('Selling a bicycle previously rented at 10€/hour');
+    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'Items' } });
+    fireEvent.change(screen.getByLabelText('Listing type'), { target: { value: 'Free' } });
+    fireEvent.change(screen.getByLabelText('Location'), { target: { value: 'Athens' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Publish listing' }));
+    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ main_category: 'Items', sub_category: 'Free', price: '0' })));
+    expect(screen.queryByText('Enter a price greater than 0 for this rate.')).not.toBeInTheDocument();
+  });
+
+  it('recognizes the discounted phone from the reported misspelled description', async () => {
+    const note = 'πωλειται κινητο smasung s25 ultra ελαχειστα χρησιμοποιημενοαπο 220 στα 130';
+    openDetails();
+    await describeListing(note);
+    expect(screen.getByLabelText('Category')).toHaveValue('Items');
+    expect(screen.getByLabelText('Listing type')).toHaveValue('Sell');
+    expect(screen.getByLabelText('Title')).toHaveValue('Samsung μεταχειρισμένο s25 ultra');
+    expect(screen.getByLabelText('Price (€)')).toHaveValue('130€');
+    expect(screen.getByRole('button', { name: '130€' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: '220€' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('What would you like to list?')).toHaveValue(note);
+  });
+
+  it('recognizes the care service and preserves its hourly basis when the price is corrected', async () => {
+    const note = 'μπορω να αναλαβω  ηλικιωμενους κατοικον με 10 ευρω την ωρα';
+    openDetails();
+    await describeListing(note);
+    expect(screen.getByLabelText('Category')).toHaveValue('Services');
+    expect(screen.getByLabelText('Listing type')).toHaveValue('I can');
+    expect(screen.getByLabelText('Title')).toHaveValue('Φροντίδα ηλικιωμένων κατ’ οίκον');
+    expect(screen.getByLabelText('Price (€)')).toHaveValue('10€');
+    expect(screen.getByText('Per hour, as stated in your description. Agree the total before payment.')).toBeVisible();
+    expect(screen.getByRole('button', { name: '10€/hour' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: '10€' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Price (€)'), { target: { value: '12' } });
+    expect(screen.getByRole('button', { name: '12€/hour' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: '10€/hour' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Location'), { target: { value: 'Athens' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Publish listing' }));
+    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({
+      main_category: 'Services', sub_category: 'I can', price: '12', description: note,
+      tags: expect.arrayContaining(['12€/hour']),
+    })));
+  });
+
+  it('removes the previous rate basis when an inferred draft changes to a fixed price', async () => {
+    openDetails();
+    await describeListing('Μπορώ να αναλάβω ηλικιωμένους με 10 ευρώ την ώρα');
+    expect(screen.getByRole('button', { name: '10€/hour' })).toBeInTheDocument();
+    await describeListing('Πωλώ κινητό Samsung με 130 ευρώ');
+    expect(screen.getByLabelText('Category')).toHaveValue('Items');
+    expect(screen.getByLabelText('Price (€)')).toHaveValue('130€');
+    expect(screen.getByRole('button', { name: '130€' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '10€/hour' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Per hour, as stated in your description. Agree the total before payment.')).not.toBeInTheDocument();
+  });
+
   it('keeps tag changes separate from publishing', () => {
     const publish = vi.fn((event: React.FormEvent) => event.preventDefault());
     const toggle = vi.fn();

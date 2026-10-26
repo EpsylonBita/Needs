@@ -18,6 +18,24 @@ beforeEach(() => {
   mocks.remove.mockResolvedValue({ error: null })
 })
 describe('listing persistence', () => {
+  it.each(['', undefined, 0])('rejects a missing rate amount %s before authentication or writes', async price => {
+    await expect(createListing({ ...listing, description: 'Home care 10€/hour', main_category: 'Services', sub_category: 'I can', price })).rejects.toThrow('positive price');
+    expect(mocks.getUser).not.toHaveBeenCalled();
+    expect(mocks.insertListing).not.toHaveBeenCalled();
+  });
+
+  it('retains positive rate amounts and the original description', async () => {
+    await createListing({ ...listing, description: 'Home care 10€/hour', main_category: 'Services', sub_category: 'I can', price: '12' });
+    expect(mocks.insertListing).toHaveBeenCalledWith(expect.objectContaining({ price: 12, description: 'Home care 10€/hour' }));
+  });
+
+  it('preserves fixed-total optional prices and explicit Free even with prior rate wording', async () => {
+    await createListing({ ...listing, price: '' });
+    expect(mocks.insertListing).toHaveBeenLastCalledWith(expect.objectContaining({ price: 0 }));
+    await createListing({ ...listing, sub_category: 'Free', description: 'Previously rented at 10€/hour', price: '' });
+    expect(mocks.insertListing).toHaveBeenLastCalledWith(expect.objectContaining({ price: 0, sub_category: 'Free' }));
+  });
+
   it('preserves comma decimals and valid PostGIS coordinates and contact data', async () => {
     await createListing(listing)
     expect(mocks.insertListing).toHaveBeenCalledWith(expect.objectContaining({ price: 12.5, location: 'SRID=4326;POINT(23.7 37.9)', contact_number: '+301234567890' }))

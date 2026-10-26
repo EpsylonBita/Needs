@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase/client'
 import { ownedListingRpc, requireListingUser } from '@/lib/listings/owner-request'
+import { listingPriceNeedsConfirmation, RATE_PRICE_REQUIRED_ERROR } from '@/lib/listings/price-policy'
 
 export const LISTING_TITLE_MAX = 200
 export const LISTING_DESCRIPTION_MAX = 10000
@@ -59,6 +60,7 @@ export async function createListing(input: CreateListingInput) {
   const priceNum = parseListingPrice(input.price)
   const allowedSubcategories = input.main_category === 'Items' ? ['Buy', 'Sell', 'Free'] : input.main_category === 'Services' ? ['I want', 'I will', 'I can'] : []
   if (!allowedSubcategories.includes(input.sub_category)) throw new Error('Choose a valid category and subcategory')
+  if (listingPriceNeedsConfirmation(priceNum, input.description, input.main_category, input.sub_category)) throw new Error(RATE_PRICE_REQUIRED_ERROR)
   if (input.title.trim().length < 3 || input.description.trim().length < 10) throw new Error('Enter a title and description for your listing')
   if (!input.coordinates || input.coordinates.length !== 2 || !input.coordinates.every(Number.isFinite)
     || Math.abs(input.coordinates[0]) > 180 || Math.abs(input.coordinates[1]) > 90) {
@@ -168,6 +170,8 @@ export function normalizeListingEdit(input: CreateListingInput) {
   if (contact && Array.from(contact).length > LISTING_CONTACT_MAX) throw new Error('Contact number is too long')
   const allowed = input.main_category === 'Items' ? ['Buy', 'Sell', 'Free'] : input.main_category === 'Services' ? ['I want', 'I will', 'I can'] : []
   if (!allowed.includes(input.sub_category)) throw new Error('Choose a valid category and subcategory')
+  const price = input.sub_category === 'Free' ? 0 : parseListingPrice(input.price)
+  if (listingPriceNeedsConfirmation(price, description, input.main_category, input.sub_category)) throw new Error(RATE_PRICE_REQUIRED_ERROR)
   if (input.coordinates != null && !validCoordinates(input.coordinates)) throw new Error('Select a valid location on the map')
   const tags = [...new Set((input.tags ?? []).map(tag => tag.trim()).filter(Boolean))]
   if (tags.length > LISTING_TAG_LIMIT || tags.some(tag => Array.from(tag).length > LISTING_TAG_MAX)) throw new Error('Use up to 20 tags with at most 50 characters each')
@@ -175,7 +179,7 @@ export function normalizeListingEdit(input: CreateListingInput) {
   if (address !== null && (typeof address !== 'object' || Array.isArray(address))) throw new Error('Enter a valid address')
   return {
     title, description, main_category: input.main_category, sub_category: input.sub_category,
-    price: input.sub_category === 'Free' ? 0 : parseListingPrice(input.price),
+    price,
     coordinates: input.coordinates ?? null, address, contact_number: contact, tags,
   }
 }

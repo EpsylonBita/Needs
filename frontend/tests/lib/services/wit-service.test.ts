@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { WitService } from '@/lib/services/wit-service';
+import { extractListingPrice, hasListingPriceRate, WitService } from '@/lib/services/wit-service';
 
 const parser = new WitService('');
 afterEach(() => vi.unstubAllGlobals());
@@ -55,7 +55,7 @@ describe('local listing text extraction', () => {
     expect((await parser.analyzeText(text)).price).toBe(price);
   });
 
-  it.each(['LG OLED 55 inch', 'iPhone 16 for sale', 'For sale 300', 'TV for $300', 'Was 500€, now 300€', '100-200€', 'From 300€', '20€/hour', '1.200€', 'Serial 123456789012'])('does not guess a price from %s', async text => {
+  it.each(['LG OLED 55 inch', 'iPhone 16 for sale', 'For sale 300', 'TV for $300', '100-200€', 'From 300€', '20€/week', '1.200€', 'Serial 123456789012'])('does not guess a price from %s', async text => {
     const result = await parser.analyzeText(text);
     expect(result.price).toBeUndefined();
     expect(result.smartTags.some(tag => /[€$£]/u.test(tag))).toBe(false);
@@ -151,8 +151,8 @@ describe('local listing text extraction', () => {
     expect(result.brand).toBeUndefined();
   });
 
-  it('retains conservative amount handling for currencies, rates and ranges in expanded tags', async () => {
-    for (const amount of ['120€ or $150', '120€/day', '100–120€', 'περίπου 120€', 'Was 150€, now 120€']) {
+  it('retains conservative amount handling for currencies, unsupported rates and ranges in expanded tags', async () => {
+    for (const amount of ['120€ or $150', '120€/week', '100–120€', 'περίπου 120€', 'Was 150€, now 120€ or 90€']) {
       const result = await parser.analyzeText(`Selling a used bicycle for ${amount}`);
       expect(result.price).toBeUndefined();
       expect(result.smartTags).toContain('used');
@@ -169,5 +169,128 @@ describe('local listing text extraction', () => {
 
   it('does not turn the adjective ideal into a brand', async () => {
     expect((await parser.analyzeText('Selling a used bicycle, ideal for commuting')).brand).toBeUndefined();
+  });
+
+  it('recognizes the exact discounted-phone screenshot without changing the description', async () => {
+    const text = 'πωλειται κινητο smasung s25 ultra ελαχειστα χρησιμοποιημενοαπο 220 στα 130';
+    const result = await parser.analyzeText(text);
+    expect(result).toMatchObject({ description: text, title: 'Samsung μεταχειρισμένο s25 ultra', brand: 'Samsung', condition: 'used', category: 'Items', subcategory: 'Sell', price: '130€' });
+    expect(result.priceUnit).toBeUndefined();
+    expect(result.smartTags).toEqual(expect.arrayContaining(['samsung', 'μεταχειρισμένο', '130€']));
+    expect(result.title).not.toMatch(/220|130|smasung|ελαχειστα/iu);
+    expect(result.smartTags).not.toContain('220€');
+  });
+
+  it('recognizes the exact home-care screenshot and keeps the hourly meaning', async () => {
+    const text = 'μπορω να αναλαβω ηλικιωμενους κατοικον με 10 ευρω την ωρα';
+    const result = await parser.analyzeText(text);
+    expect(result).toMatchObject({ description: text, title: 'Φροντίδα ηλικιωμένων κατ’ οίκον', category: 'Services', subcategory: 'I can', price: '10€', priceUnit: 'hour' });
+    expect(result.smartTags).toEqual(expect.arrayContaining(['φροντίδα ηλικιωμένων', 'κατ’ οίκον', '10€']));
+  });
+
+  it.each([
+    ['Πωλείται Samsung S25 Ultra, από 220€ στα 130€', '130€'],
+    ['Πωλώ κινητό από 220 στα 130 ευρώ', '130€'],
+    ['Was 500€, now 300€', '300€'],
+    ['Selling a bicycle, was 150 now 120', '120€'],
+    ['Πωλείται καρέκλα από 20,50 στα 15,25', '15.25€'],
+  ])('extracts only the final amount of an explicit discount: %s', async (text, price) => {
+    expect(await parser.analyzeText(text)).toMatchObject({ price });
+  });
+
+  it.each([
+    ['20€/hour', '20€', 'hour'], ['I offer tutoring for 12.50 euros per hour', '12.5€', 'hour'],
+    ['Προσφέρω φροντίδα ηλικιωμένων με 10 ευρώ την ώρα', '10€', 'hour'],
+    ['Προσφέρω καθαρισμό με 30€ την ημέρα', '30€', 'day'], ['120€/day', '120€', 'day'],
+    ['Φροντίδα ηλικιωμένων 900 ευρώ το μήνα', '900€', 'month'], ['900 EUR/month', '900€', 'month'],
+  ])('returns the explicit EUR rate and its unit: %s', async (text, price, priceUnit) => {
+    expect(await parser.analyzeText(text)).toMatchObject({ price, priceUnit });
+  });
+
+  it.each([
+    ['Αναλαμβάνω φροντίδα ηλικιωμένων κατ οίκον', 'I will'],
+    ['Μπορώ να αναλάβω ηλικιωμένους κατ’ οίκον', 'I can'],
+    ['Ζητάω φροντίδα ηλικιωμένων στο σπίτι', 'I want'],
+    ['Χρειάζομαι κάποιον να αναλάβει ηλικιωμένους', 'I want'],
+    ['Προσφέρω κατ οίκον φροντίδα ηλικιωμένων', 'I will'],
+  ])('classifies explicit elderly-care intent: %s', async (text, subcategory) => {
+    expect(await parser.analyzeText(text)).toMatchObject({ category: 'Services', subcategory });
+  });
+
+  it.each([
+    'Samsung S25 Ultra 220 130', 'Πωλείται κινητό 130', 'Phone: +30 6912345678',
+    'Samsung S25 από 130 στα 220', 'Selling a phone from 100 to 200€',
+    'Πωλείται κινητό από 220 στα 130, καρέκλα 50€', 'Was 500€, now 300€, or 250€',
+    'TV was 500 now 300 and bicycle was 200 now 100', 'Πωλώ κινητό από 6998765432 στα 6912345678',
+    'Πωλείται κινητό από 1.200 στα 900', '20€ την εβδομάδα', '10–20€ την ώρα',
+    '20€/hour or 100€/day', '20$ per hour', '20€ per minute',
+    '10€ έως 20', '10€–20', 'από 10€ την ώρα', '10€ ανά εβδομάδα', '10€/hour/day',
+    'Πωλείται κινητό από 220€ στα 130–150', 'Was 220€ now 130 or 150', 'περίπου από 220€ στα 130',
+  ])('keeps ambiguous prices, ranges, contacts and unsupported units unset: %s', async text => {
+    const result = await parser.analyzeText(text);
+    expect(result.price).toBeUndefined();
+    expect(result.priceUnit).toBeUndefined();
+  });
+
+  it('does not expand a controlled typo alias inside unrelated words or conflicting brands', async () => {
+    expect((await parser.analyzeText('Selling a used Smasungton phone')).brand).toBeUndefined();
+    expect((await parser.analyzeText('Selling a used smasung or Sony phone')).brand).toBeUndefined();
+    expect((await parser.analyzeText('Selling a used samsong phone')).brand).toBeUndefined();
+  });
+
+  it('keeps negated and mixed care intents ambiguous', async () => {
+    for (const text of ['Δεν μπορώ να αναλάβω ηλικιωμένους', 'Ζητάω και προσφέρω φροντίδα ηλικιωμένων']) {
+      expect((await parser.analyzeText(text)).subcategory).toBeUndefined();
+    }
+    expect((await parser.analyzeText('Πωλώ βιβλίο για φροντίδα ηλικιωμένων')).subcategory).not.toBe('I will');
+    expect(await parser.analyzeText('Πωλείται κινητό για ηλικιωμένους')).toMatchObject({ category: 'Items', subcategory: 'Sell' });
+  });
+
+  it('keeps rate detection independent of ambiguous amounts for payment guards', () => {
+    expect(extractListingPrice('10€/ώρα ή 20€/ημέρα')).toEqual({});
+    expect(hasListingPriceRate('10€/ώρα ή 20€/ημέρα')).toBe(true);
+    expect(extractListingPrice('10€/week')).toEqual({});
+    expect(hasListingPriceRate('10€/week')).toBe(true);
+    expect(hasListingPriceRate('Προσφέρω φροντίδα 10€ για 2 ώρες')).toBe(false);
+    expect(extractListingPrice('Προσφέρω φροντίδα 10€ για 2 ώρες')).toEqual({ price: '10€' });
+    expect(extractListingPrice(' ')).toEqual({});
+  });
+
+  it.each(['από 20€ στα 10 την ώρα', 'was €20 now 10 per hour'])('keeps the payment guard consistent when only the old discount amount has a currency: %s', text => {
+    expect(extractListingPrice(text)).toEqual({ price: '10€', priceUnit: 'hour' });
+    expect(hasListingPriceRate(text)).toBe(true);
+  });
+
+  it.each(['από 20€ στα 10 την εβδομάδα', 'was €20 now 10 per week', 'was 20 now 10 per hour'])('blocks unsupported or currency-ambiguous discount rates from fixed-total checkout: %s', text => {
+    expect(extractListingPrice(text)).toEqual({});
+    expect(hasListingPriceRate(text)).toBe(true);
+  });
+
+  it('preserves original spacing, accents and typos while recognizing condition inflections', async () => {
+    const text = '  Πωλείται  τηλεόραση smasung  ελάχιστα  χρησιμοποιημένη, 120€  ';
+    const result = await parser.analyzeText(text);
+    expect(result.description).toBe(text);
+    expect(result).toMatchObject({ brand: 'Samsung', condition: 'used', title: 'Samsung μεταχειρισμένη', price: '120€' });
+  });
+
+  it('recognizes home care with double spaces without rewriting the source', async () => {
+    const text = 'μπορω να αναλαβω  ηλικιωμενους κατ  οικον με 10 ευρω την ωρα';
+    expect(await parser.analyzeText(text)).toMatchObject({ description: text, title: 'Φροντίδα ηλικιωμένων κατ’ οίκον', category: 'Services', subcategory: 'I can', price: '10€', priceUnit: 'hour' });
+  });
+
+  it('does not mistake Greek prose articles after a price for rate units', () => {
+    const text = 'Πωλώ κινητό για 130 ευρώ το κινητό είναι σε καλή κατάσταση';
+    expect(extractListingPrice(text)).toEqual({ price: '130€' });
+    expect(hasListingPriceRate(text)).toBe(false);
+    expect(extractListingPrice('Πωλώ καρέκλα 20€ την αγόρασα πρόσφατα')).toEqual({ price: '20€' });
+    expect(hasListingPriceRate('20€ την εβδομάδα')).toBe(true);
+  });
+
+  it('adds English care tags only for a positive service description', async () => {
+    const result = await parser.analyzeText('I can care for elderly people at home for 10€/hour');
+    expect(result).toMatchObject({ category: 'Services', subcategory: 'I can', title: 'Elderly care at home' });
+    expect(result.smartTags).toEqual(expect.arrayContaining(['elderly care', 'at home']));
+    expect((await parser.analyzeText('Δεν μπορώ να αναλάβω ηλικιωμένους κατοικον')).smartTags).toEqual([]);
+    expect((await parser.analyzeText('Πωλείται κινητό για ηλικιωμένους στο σπίτι')).smartTags).not.toContain('φροντίδα ηλικιωμένων');
   });
 });

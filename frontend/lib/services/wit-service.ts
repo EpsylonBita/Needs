@@ -16,12 +16,14 @@ export function parseWitResponse(payload: unknown): WitResponse {
   return witResponseSchema.parse(payload);
 }
 
-interface ParsedWitResponse {
+export type ListingPriceUnit = 'hour' | 'day' | 'month';
+export interface ParsedWitResponse {
   title?: string;
   description?: string;
   category?: 'Items' | 'Services';
   subcategory?: 'Buy' | 'Sell' | 'Free' | 'I want' | 'I will' | 'I can';
   price?: string;
+  priceUnit?: ListingPriceUnit;
   condition?: string;
   brand?: string;
   location?: string;
@@ -32,6 +34,15 @@ interface ParsedWitResponse {
 
 function normalize(text: string): string {
   return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+}
+
+/** Controlled corrections apply only to recognition; the stored description is untouched. */
+function recognitionSource(text: string): string {
+  return text.normalize('NFC')
+    .replace(/[^\S\r\n]+/gu, ' ')
+    .replace(/(^|[^\p{L}\p{N}])smasung(?=$|[^\p{L}\p{N}])/giu, '$1Samsung')
+    .replace(/(^|[^\p{L}\p{N}])ελαχειστα(?=$|[^\p{L}\p{N}])/giu, '$1ελάχιστα')
+    .replace(/(^|[^\p{L}\p{N}])(χρησιμοποιημ[εέ]ν(?:ο|η|α|ος|ους|ες))(?=απ[όο]\s+\d)/giu, '$1$2 ');
 }
 
 // Unicode boundaries are necessary for Greek words; \b only covers Latin letters.
@@ -60,6 +71,14 @@ const SERVICE_ACTIONS = [
   'repair', 'clean', 'teach', 'design', 'build a website', 'επισκευάσω', 'επισκευάζω',
   'καθαρίσω', 'καθαρίζω', 'διδάξω', 'διδάσκω', 'σχεδιάσω', 'φτιάξω ιστοσελίδα',
 ] as const;
+
+function isElderlyCare(input: string): boolean {
+  return hasAny(input, ['ηλικιωμένους', 'ηλικιωμένων', 'ηλικιωμένο', 'ηλικιωμένη', 'ηλικιωμένοι', 'ηλικιωμένες', 'elderly', 'seniors'])
+    && hasAny(input, ['φροντίδα', 'φροντίζω', 'φροντίσω', 'φροντιστή', 'φροντίστρια', 'αναλάβω', 'αναλάβει', 'αναλαμβάνω', 'care', 'caregiver']);
+}
+function isHomeCare(input: string): boolean {
+  return hasAny(input, ['κατοικον', 'κατ οίκον', 'κατ’ οίκον', "κατ' οίκον", 'στο σπίτι', 'at home', 'home care']);
+}
 const SMART_TAG_TERMS = [
   ...ITEM_TERMS, ...SERVICE_TERMS,
   'lg', 'samsung', 'sony', 'apple', 'xiaomi', 'huawei', 'lenovo', 'dell', 'asus', 'macbook',
@@ -76,7 +95,9 @@ const BRANDS = [
 
 const CONDITIONS = [
   ['new', ['brand new', 'new', 'unopened', 'καινούργιο', 'καινούργια', 'καινούρια', 'καινούριο', 'αχρησιμοποίητο', 'αχρησιμοποίητη']],
-  ['used', ['second hand', 'second-hand', 'used', 'μεταχειρισμένο', 'μεταχειρισμένη', 'μεταχειρισμένα', 'μεταχειρισμένες']],
+  ['used', ['second hand', 'second-hand', 'used', 'μεταχειρισμένο', 'μεταχειρισμένη', 'μεταχειρισμένα', 'μεταχειρισμένες', 'μεταχειρισμένος', 'μεταχειρισμένους',
+    'ελάχιστα χρησιμοποιημένο', 'ελάχιστα χρησιμοποιημένη', 'ελάχιστα χρησιμοποιημένα', 'ελάχιστα χρησιμοποιημένος',
+    'λίγο χρησιμοποιημένο', 'λίγο χρησιμοποιημένη', 'χρησιμοποιημένο', 'χρησιμοποιημένη', 'χρησιμοποιημένα', 'χρησιμοποιημένος', 'χρησιμοποιημένες']],
   ['refurbished', ['refurbished', 'reconditioned', 'ανακατασκευασμένο', 'ανακατασκευασμένη']],
   ['damaged', ['damaged', 'broken', 'χαλασμένο', 'χαλασμένη']],
 ] as const;
@@ -111,7 +132,7 @@ function extractBrand(text: string): string | undefined {
   return brands.length === 1 ? brands[0] : undefined;
 }
 
-function conciseTitle(text: string, brand?: string, conditionPhrase?: string): string | undefined {
+function conciseTitle(text: string, brand?: string, conditionPhrase?: string, conditionLabel = conditionPhrase): string | undefined {
   let title = text.trim().split(/\r?\n/u)[0];
   const leadingIntent = /^(?:(?:i am |i'm )?selling|for sale|sell|giving away|give away|looking to buy|looking for|i want|i need|i offer|offering|i provide|providing|i can|i will|ζηταω|ζητω|αναζητω|ψαχνω|χρειαζομαι|θελω|αγοραζω|πωλω|πουλω|πουλαω|πωλειται|πωλουνται|χαριζω|χαριζεται|προσφερω|παρεχω|αναλαμβανω|μπορω να|θα)(?=\s|[:;,])\s*[:;,]?\s*/u;
   const lead = leadingIntent.exec(normalize(title));
@@ -120,7 +141,7 @@ function conciseTitle(text: string, brand?: string, conditionPhrase?: string): s
   // additional prose remain intact in the description instead of becoming title text.
   const stops = [
     /[,;\n]|\.(?=\s|$)/u,
-    /(?:^|\s)(?:for|with|in|at|was|now|phone|tel|call|location|price|για|με|σε|στην|στο|τηλεφωνο|τηλ|καλεστε|περιοχη|τοποθεσια|τιμη)\s*[:\s]/u,
+    /(?:^|\s)(?:for|with|in|at|was|now|phone|tel|call|location|price|για|με|σε|στην|στο|απο|τηλεφωνο|τηλ|καλεστε|περιοχη|τοποθεσια|τιμη)\s*[:\s]/u,
     /(?:^|\s)(?:brand|μαρκα)\s*:/u,
     /(?:€|eur(?:os?)?|ευρω|[$£])\s*\d|\d[\d.,]*(?:\s*[-–]\s*\d[\d.,]*)?\s*(?:€|eur(?:os?)?|ευρω|[$£])/u,
     /https?:\/\/|www\.|[\w.+-]+@[\w.-]+\.\w+|\+?\d[\d ()-]{8,}\d/u,
@@ -153,7 +174,7 @@ function conciseTitle(text: string, brand?: string, conditionPhrase?: string): s
     title = title.replace(/\s+/gu, ' ').trim();
     if (!/\d/u.test(title) && !hasAny(normalize(title), ['oled', 'qled', 'qned', 'galaxy', 'macbook', 'playstation', 'xbox'])) title = '';
   }
-  title = [brand, conditionPhrase?.toLocaleLowerCase(), title].filter(Boolean).join(' ').replace(/\s+/gu, ' ').replace(/^[\s:–—-]+|[\s:–—-]+$/gu, '');
+  title = [brand, conditionLabel?.toLocaleLowerCase(), title].filter(Boolean).join(' ').replace(/\s+/gu, ' ').replace(/^[\s:–—-]+|[\s:–—-]+$/gu, '');
   if (!title) return;
   if (title.length > 100) title = title.slice(0, 100).replace(/\s+\S*$/u, '');
   // Preserve intentional casing such as iPhone and model codes.
@@ -175,7 +196,7 @@ function extractIntent(input: string, price?: string): Pick<ParsedWitResponse, '
   const serviceAction = ['i can', 'i will', 'i offer to', 'i need someone to', 'looking for someone to',
     'μπορώ να', 'θα', 'αναλαμβάνω να', 'θέλω να μου', 'χρειάζομαι κάποιον να']
     .some(prefix => SERVICE_ACTIONS.some(action => mentions(input, prefix + ' ' + action)));
-  const service = hasAny(input, SERVICE_TERMS) || (!sell && serviceAction);
+  const service = hasAny(input, SERVICE_TERMS) || (!sell && (serviceAction || isElderlyCare(input)));
   const item = hasAny(input, ITEM_TERMS) || sell || giveaway;
   const category = service ? 'Services' : item ? 'Items' : undefined;
   if (!category) return {};
@@ -197,24 +218,84 @@ function extractIntent(input: string, price?: string): Pick<ParsedWitResponse, '
   return { category };
 }
 
-function extractPrice(text: string): string | undefined {
-  const input = normalize(text);
-  // Listings use EUR. Never silently convert another currency, a range, or a rate.
-  if (/[$£]/u.test(input) || hasAny(input, ['usd', 'gbp', 'dollars', 'pounds'])) return;
-  const matches = [...input.matchAll(/(?:€|eur(?:os?)?|ευρω)\s*(\d[\d.,]*)|(\d[\d.,]*)\s*(?:€|eur(?:os?)?|ευρω)/gu)];
-  if (matches.length !== 1) return;
+const EURO = '(?:€|eur(?:os?)?|ευρω)';
+const AMOUNT = '\\d+(?:[.,]\\d+)?';
+function euroMatches(input: string) {
+  return [...input.matchAll(new RegExp(`${EURO}\\s*(\\d[\\d.,]*)|(\\d[\\d.,]*)\\s*${EURO}`, 'gu'))];
+}
+function discountMatches(input: string) {
+  return [...input.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])(?<kind>απο|was)\\s+(?:${EURO}\\s*)?(?<old>${AMOUNT})\\s*(?:${EURO})?\\s*[,;]?\\s+(?<join>στα|now)\\s+(?:${EURO}\\s*)?(?<final>${AMOUNT})(?:\\s*${EURO})?(?![\\p{L}\\p{N}]|[.,]\\d)`, 'gu'))];
+}
+function rangeSuffix(after: string): boolean {
+  return /^\s*(?:[-–—]|(?:to|εως|μεχρι|or|η)(?=\s|$))\s*\d/u.test(after);
+}
+function numericAmount(amount: string): number | undefined {
+  // Grouping separators and >2 decimal places stay unset for manual review.
+  if (!/^\d+(?:[.,]\d{1,2})?$/u.test(amount)) return;
+  const value = Number(amount.replace(',', '.'));
+  return Number.isFinite(value) && value >= 0 && value <= 9999999999.99 ? value : undefined;
+}
+function rateSuffix(after: string): { hasRate: boolean; unit?: ListingPriceUnit } {
+  const prefix = /^\s*(?:\/\s*|per\s+|ανα\s+|τη(?:ν)?\s+|το(?:ν)?\s+)/u.exec(after);
+  if (!prefix) return { hasRate: false };
+  const rest = after.slice(prefix[0].length);
+  // Greek articles can start ordinary prose ("130 ευρώ το κινητό είναι...").
+  // Treat them as rate markers only before a known time/count basis.
+  if (/^\s*(?:τη(?:ν)?|το(?:ν)?)\s/u.test(prefix[0])
+    && !/^(?:hours?|hrs?|h|ωρα|ωρες|days?|d|ημερα|μερα|months?|mo|μηνα|μηνες|εβδομαδα|βδομαδα|λεπτο|δευτερολεπτο|ετος|χρονο|κιλο|τετραγωνικο|τεμαχιο|ατομο)(?=$|[^\p{L}\p{N}])/u.test(rest)) return { hasRate: false };
+  const units: [ListingPriceUnit, RegExp][] = [
+    ['hour', /^(?:hours?|hrs?|h|ωρα|ωρες)(?=$|[^\p{L}\p{N}])/u],
+    ['day', /^(?:days?|d|ημερα|μερα)(?=$|[^\p{L}\p{N}])/u],
+    ['month', /^(?:months?|mo|μηνα)(?=$|[^\p{L}\p{N}])/u],
+  ];
+  for (const [unit, pattern] of units) {
+    const match = pattern.exec(rest);
+    if (match && !/^\s*(?:\/|per\s|ανα\s)/u.test(rest.slice(match[0].length))) return { hasRate: true, unit };
+  }
+  return { hasRate: true };
+}
+
+/** Payment guards must detect rate wording even when several amounts make extraction ambiguous. */
+export function hasListingPriceRate(text: string): boolean {
+  const input = normalize(recognitionSource(text));
+  return [...euroMatches(input), ...discountMatches(input)]
+    .some(match => rateSuffix(input.slice((match.index ?? 0) + match[0].length)).hasRate);
+}
+
+/** A numeric EUR price plus its explicit basis. Never silently turn a rate into a total. */
+export function extractListingPrice(text: string): Pick<ParsedWitResponse, 'price' | 'priceUnit'> {
+  const input = normalize(recognitionSource(text));
+  if (/[$£]/u.test(input) || hasAny(input, ['usd', 'gbp', 'dollars', 'pounds'])) return {};
+  const matches = euroMatches(input);
+  const discounts = discountMatches(input);
+  if (discounts.length) {
+    if (discounts.length !== 1) return {};
+    const discount = discounts[0];
+    const { kind, join, old, final } = discount.groups!;
+    if ((kind === 'απο') !== (join === 'στα')) return {};
+    const start = discount.index ?? 0;
+    const end = start + discount[0].length;
+    if (matches.some(match => (match.index ?? 0) < start || (match.index ?? 0) + match[0].length > end)) return {};
+    if (/(?:about|roughly|περιπου|εως|μεχρι)\s*$/u.test(input.slice(0, start)) || rangeSuffix(input.slice(end))) return {};
+    const oldValue = numericAmount(old), value = numericAmount(final);
+    // Bare discount amounts must be short enough not to be contact/serial numbers.
+    if (oldValue === undefined || value === undefined || value >= oldValue || (!matches.length && (oldValue >= 10000000 || value >= 10000000))) return {};
+    const rate = rateSuffix(input.slice(end));
+    if (rate.hasRate && (!rate.unit || !matches.length)) return {};
+    return { price: `${value}€`, ...(rate.unit ? { priceUnit: rate.unit } : {}) };
+  }
+  if (matches.length !== 1) return {};
   const match = matches[0];
-  const amount = match[1] || match[2];
-  // Grouping separators and >2 decimal places are left for the user to disambiguate.
-  if (!/^\d+(?:[.,]\d{1,2})?$/.test(amount)) return;
   const before = input.slice(0, match.index).trimEnd();
   const after = input.slice((match.index ?? 0) + match[0].length);
   if (/(?:\d[.,]?|[+\-–—])$/u.test(before) || /^[\p{L}\p{N}]/u.test(after)
     || /(?:from|up to|starting at|απο|εως|μεχρι|under|over|about|περιπου)\s*$/u.test(before)
-    || /^\s*(?:\/|per\b|ανα(?=\s|$)|την ωρα|το μηνα)/u.test(after)) return;
-  const value = Number(amount.replace(',', '.'));
-  if (!Number.isFinite(value) || value < 0 || value > 9999999999.99) return;
-  return String(value) + '€';
+    || /(?:from|between|απο|μεταξυ)\s+\d[\d.,]*\s+(?:to|and|εως|μεχρι|και|στα)\s*$/u.test(before)
+    || rangeSuffix(after)) return {};
+  const value = numericAmount(match[1] || match[2]);
+  const rate = rateSuffix(after);
+  if (value === undefined || (rate.hasRate && !rate.unit)) return {};
+  return { price: `${value}€`, ...(rate.unit ? { priceUnit: rate.unit } : {}) };
 }
 
 function extractContact(text: string): string | undefined {
@@ -236,7 +317,7 @@ export class WitService {
 
   async analyzeText(text: string): Promise<ParsedWitResponse> {
     const result: ParsedWitResponse = { tags: [], smartTags: [], description: text };
-    const source = text.normalize('NFC');
+    const source = recognitionSource(text);
     if (!source.trim()) return result;
     const facts = source
       .replace(/https?:\/\/\S+|www\.\S+|[^\s@]+@[^\s@]+\.[^\s@]+/giu, ' ')
@@ -244,8 +325,14 @@ export class WitService {
       .replace(/(?:^|\n)\s*(?:location|περιοχή|περιοχη|τοποθεσία|τοποθεσια|website|email|e-mail|url|ιστοσελίδα)\s*:[^\n]*/giu, ' ');
     const input = normalize(facts);
     let conditionPhrase: string | undefined;
-    result.price = extractPrice(text);
+    let conditionLabel: string | undefined;
+    Object.assign(result, extractListingPrice(text));
     Object.assign(result, extractIntent(input, result.price));
+    const elderlyCare = result.category === 'Services' && isElderlyCare(input);
+    const homeCare = elderlyCare && isHomeCare(input);
+    const greek = /[\u0370-\u03ff]/u.test(input);
+    const careTag = greek ? 'φροντίδα ηλικιωμένων' : 'elderly care';
+    const homeTag = greek ? 'κατ’ οίκον' : 'at home';
     if (!hasAny(input, ['not', "don't", 'no', 'never', 'δεν', 'μην'])) {
       const subject = conciseTitle(facts) ?? '';
       const conditionLabels = [...facts.matchAll(/(?:^|\n)\s*(?:condition|κατάσταση|κατασταση)\s*:\s*([^\n]+)/giu)].map(match => match[1]);
@@ -257,18 +344,25 @@ export class WitService {
       if (detected.length === 1) {
         result.condition = detected[0][0];
         conditionPhrase = detected[0][1].map(phrase => firstMention(primaryConditions.length ? primaryConditionText : facts, phrase)?.text).find(Boolean);
+        const usedEnding = conditionPhrase && /χρησιμοποιημεν(ο|η|α|ος|ες|ους)$/u.exec(normalize(conditionPhrase))?.[1];
+        conditionLabel = usedEnding ? ({ ο: 'μεταχειρισμένο', η: 'μεταχειρισμένη', α: 'μεταχειρισμένα', ος: 'μεταχειρισμένος', ες: 'μεταχειρισμένες', ους: 'μεταχειρισμένους' } as Record<string, string>)[usedEnding] : conditionPhrase;
       }
       result.brand = extractBrand(facts);
-      const conditionTag = conditionPhrase && /[\u0370-\u03ff]/u.test(conditionPhrase) ? conditionPhrase.toLocaleLowerCase() : result.condition;
+      const conditionTag = conditionLabel && /[\u0370-\u03ff]/u.test(conditionLabel) ? conditionLabel.toLocaleLowerCase() : result.condition;
       result.tags = result.category ? [result.category] : [];
       result.smartTags = [...new Set([
         ...SMART_TAG_TERMS.filter(term => mentions(input, term)).map(normalize),
         ...(result.brand ? [normalize(result.brand)] : []),
         ...(conditionTag ? [conditionTag] : []),
+        ...(elderlyCare ? [careTag] : []),
+        ...(homeCare ? [homeTag] : []),
         ...(result.price ? [result.price] : []),
       ])];
     }
-    result.title = conciseTitle(source, result.brand, conditionPhrase);
+    result.title = conciseTitle(source, result.brand, conditionPhrase, conditionLabel);
+    if (elderlyCare) {
+      result.title = greek ? `Φροντίδα ηλικιωμένων${homeCare ? ' κατ’ οίκον' : ''}` : `Elderly care${homeCare ? ' at home' : ''}`;
+    }
     result.contactNumber = extractContact(text);
     const locations = [...text.matchAll(/(?:^|\n)\s*(?:location|περιοχή|τοποθεσία)\s*:\s*([^\n]+)/giu)];
     if (locations.length === 1) result.location = locations[0][1].trim();

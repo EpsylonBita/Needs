@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTheme } from 'next-themes';
 import mapboxgl from 'mapbox-gl';
@@ -9,6 +9,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/contexts/i18n-context';
 import { MapListingPreview, type MapListing } from './map-listing-preview';
+import { formatPublishedListingPrice, listingPriceNeedsConfirmation } from '@/lib/listings/price-policy';
 
 interface SearchResult extends MapListing {
   sellerId?: string;
@@ -42,7 +43,6 @@ export function Map({ results, live = false }: MapProps) {
   const [popupTarget, setPopupTarget] = useState<HTMLDivElement | null>(null);
   const visibleResults = live ? liveResults ?? results : results;
   const selected = visibleResults.find(result => result.id === selectedId) ?? null;
-  const priceFormatter = useMemo(() => new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR', notation: 'compact', maximumFractionDigits: 1 }), [locale]);
   const closePreview = useCallback(() => {
     markers.current.find(item => item.id === selectedId)?.button.focus();
     setSelectedId(null);
@@ -183,7 +183,7 @@ export function Map({ results, live = false }: MapProps) {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'needs-map-price-marker';
-      const price = result.price === 0 ? t('map.free', 'Free') : typeof result.price === 'number' && Number.isFinite(result.price) ? priceFormatter.format(result.price) : t('map.priceOnRequest', 'Ask for price');
+      const price = result.price === 0 && !listingPriceNeedsConfirmation(result.price, result.description, result.category, result.subcategory) ? t('map.free', 'Free') : typeof result.price === 'number' && Number.isFinite(result.price) ? formatPublishedListingPrice(result.price, result.description, locale, result.category, result.subcategory, { notation: 'compact', maximumFractionDigits: 1 }) : t('map.priceOnRequest', 'Ask for price');
       button.setAttribute('aria-label', `${t('map.openListing', 'View listing: {title}').replace('{title}', result.title)} · ${price}`);
       button.setAttribute('role', 'button');
       button.setAttribute('aria-haspopup', 'dialog');
@@ -209,7 +209,7 @@ export function Map({ results, live = false }: MapProps) {
       button.setAttribute('role', 'button');
       markers.current.push({ marker, button, id: result.id });
     });
-  }, [t, priceFormatter]);
+  }, [t, locale]);
 
   useEffect(() => {
     const current = map.current;

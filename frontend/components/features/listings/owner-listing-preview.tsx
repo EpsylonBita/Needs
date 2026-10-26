@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useI18n } from '@/contexts/i18n-context'
 import { Button } from '@/components/ui/button'
 import { getMyListing } from '@/lib/services/listing-service'
+import { formatPublishedListingPrice } from '@/lib/listings/price-policy'
 import { ownerListingCopy, ownerStatus, statusLabel } from './owner-listing-copy'
 import styles from './owner-listings.module.css'
 
@@ -27,7 +28,7 @@ function Preview({ id, userId }: { id: string; userId: string }) {
       </div></header>
       {listing.status !== 'active' && <p className={styles.notice}>{listing.moderation_suspended ? copy.holdNotice : copy.privateNote}</p>}
       <article className={styles.preview}>
-        <div className={styles.previewHeader}><div className={styles.meta}><span className={styles.badge} data-status={ownerStatus(listing)}>{statusLabel(listing, copy)}</span><span>{listing.main_category === 'Items' ? copy.items : copy.services} · {copy[listing.sub_category]}</span></div><span className={styles.price}>{listing.sub_category === 'Free' ? copy.free : new Intl.NumberFormat(locale === 'el' ? 'el-GR' : 'en-GB', { style: 'currency', currency: 'EUR' }).format(listing.price)}</span></div>
+        <div className={styles.previewHeader}><div className={styles.meta}><span className={styles.badge} data-status={ownerStatus(listing)}>{statusLabel(listing, copy)}</span><span>{listing.main_category === 'Items' ? copy.items : copy.services} · {copy[listing.sub_category]}</span></div><span className={styles.price}>{listing.sub_category === 'Free' ? copy.free : formatPublishedListingPrice(listing.price, listing.description, locale, listing.main_category, listing.sub_category)}</span></div>
         {listing.images.length ? <div className={styles.gallery}>{[...listing.images].sort((a, b) => Number(b.main) - Number(a.main)).map((image, index) => <Image key={image.id} src={image.url} alt={`${listing.title} · ${index + 1}`} width={640} height={480} unoptimized />)}</div> : <div className={styles.empty}><Package size={28} /><p>{copy.noPhotos}</p></div>}
         <h2 className="mb-3 mt-6 text-sm font-semibold">{copy.description}</h2><p className={styles.description}>{listing.description}</p>
         <dl className={styles.details}>

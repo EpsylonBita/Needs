@@ -15,6 +15,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { CATEGORY_STRUCTURE } from '@/lib/constants/categories'
 import { getMyListing, updateListing, parseListingPrice, type CreateListingInput, type OwnedListing } from '@/lib/services/listing-service'
+import { getListingPriceUnit, listingPriceUnitLabel, listingRequiresAgreedTotal } from '@/lib/listings/price-display'
+import { listingPriceNeedsConfirmation } from '@/lib/listings/price-policy'
 
 const copyByLanguage = {
   en: {
@@ -93,6 +95,8 @@ function ListingForm({ listing, userId }: { listing: OwnedListing; userId: strin
     return () => { current.current = false; ++revision.current; locationRequest.current?.abort() }
   }, [])
   const previewPath = `/dashboard/listings/${encodeURIComponent(listing.id)}`
+  const priceUnit = direction === 'Free' ? undefined : getListingPriceUnit(description)
+  const hasRate = direction !== 'Free' && listingRequiresAgreedTotal(description)
 
   function changeAddress(value: string) {
     ++locationRevision.current
@@ -161,6 +165,7 @@ function ListingForm({ listing, userId }: { listing: OwnedListing; userId: strin
     if ((!unchangedLocation && cleanAddress.length < 3) || cleanAddress.length > 300) { setError(copy.locationLength); return }
     let amount: number
     try { amount = direction === 'Free' ? 0 : parseListingPrice(price) } catch { setError(copy.priceError); return }
+    if (listingPriceNeedsConfirmation(amount, cleanDescription, category, direction)) { setError(locale === 'el' ? 'Συμπλήρωσε τιμή μεγαλύτερη από 0 για τη χρέωση ανά μονάδα.' : 'Enter a price greater than 0 for this rate.'); return }
     if (listing.category_locked && (amount === 0) !== (listing.price === 0)) { setError(copy.freePaidLocked); return }
     setBusy(true)
     try {
@@ -207,7 +212,7 @@ function ListingForm({ listing, userId }: { listing: OwnedListing; userId: strin
       </div>
       {listing.category_locked && <p className="text-sm text-muted-foreground">{copy.categoryLocked}</p>}
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2"><Label htmlFor="listing-price">{copy.price}</Label><Input id="listing-price" inputMode="decimal" disabled={direction === 'Free' || listing.price_locked} value={direction === 'Free' ? '0' : price} onChange={event => setPrice(event.target.value)} className="min-h-11" />{direction === 'Free' && <p className="text-xs text-muted-foreground">{copy.free}</p>}{listing.price_locked && <p className="text-xs text-muted-foreground">{copy.priceLocked}</p>}</div>
+        <div className="space-y-2"><Label htmlFor="listing-price">{copy.price}{priceUnit && ` / ${listingPriceUnitLabel(priceUnit, locale)}`}</Label><Input id="listing-price" inputMode="decimal" disabled={direction === 'Free' || listing.price_locked} value={direction === 'Free' ? '0' : price} onChange={event => setPrice(event.target.value)} aria-describedby={hasRate ? 'listing-price-basis' : undefined} className="min-h-11" />{direction === 'Free' && <p className="text-xs text-muted-foreground">{copy.free}</p>}{hasRate && <p id="listing-price-basis" className="text-xs text-muted-foreground">{locale === 'el' ? 'Χρέωση ανά μονάδα, όπως αναφέρεται στην περιγραφή. Συμφωνήστε συνολικό κόστος στη συνομιλία πριν από online πληρωμή.' : 'Rate per unit, as stated in the description. Agree on a total in chat before online payment.'}</p>}{listing.price_locked && <p className="text-xs text-muted-foreground">{copy.priceLocked}</p>}</div>
         <div className="space-y-2"><Label htmlFor="listing-contact">{copy.contact}</Label><Input id="listing-contact" type="tel" maxLength={50} value={contact} onChange={event => setContact(event.target.value)} className="min-h-11" /></div>
       </div>
       <div className="space-y-3"><Label htmlFor="listing-tag">{copy.tags}</Label><div className="flex flex-col gap-2 sm:flex-row"><Input id="listing-tag" maxLength={50} value={tagDraft} onChange={event => setTagDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addTag() } }} className="min-h-11 w-full min-w-0" /><Button variant="outline" type="button" onClick={addTag} className="sm:shrink-0">{copy.addTag}</Button></div><div className="flex flex-wrap gap-2">{tags.map(tag => <button key={tag} type="button" onClick={() => setTags(previous => previous.filter(value => value !== tag))} aria-label={`${copy.removeTag}: ${tag}`} className="min-h-9 rounded-full bg-muted px-3 text-xs">{tag} ×</button>)}</div></div>

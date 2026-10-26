@@ -3,6 +3,7 @@ import { z } from 'zod'
 
 import { supabaseAdmin } from '@/lib/supabase/server'
 import { withApiErrorHandler, ErrorFactory, createValidationError } from '@/lib/utils/error-handler'
+import { listingRequiresAgreedTotal, RATE_PRICE_PAYMENT_ERROR } from '@/lib/listings/price-display'
 
 const schema = z.object({
   listingId: z.string().uuid(),
@@ -26,6 +27,9 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
   if (flag.error || flag.data?.enabled !== true) throw ErrorFactory.authorization('Milestones are disabled')
   const { data: me, error: profileError } = await supabaseAdmin.from('profiles').select('id').eq('user_id', user.id).limit(1).single()
   if (profileError || !me) throw ErrorFactory.businessLogic('Profile not found')
+  const { data: listing, error: listingError } = await supabaseAdmin.from('listings').select('description').eq('id', listingId).eq('status', 'active').single()
+  if (listingError || !listing) throw ErrorFactory.businessLogic('Listing not found or unavailable')
+  if (listingRequiresAgreedTotal(listing.description)) throw createValidationError('listingId', RATE_PRICE_PAYMENT_ERROR)
   const { data: id, error } = await supabaseAdmin.rpc('create_milestone_proposal', {
     p_listing_id: listingId, p_buyer_id: me.id, p_title: title, p_amount: amount,
     p_chat_id: chatId || null,

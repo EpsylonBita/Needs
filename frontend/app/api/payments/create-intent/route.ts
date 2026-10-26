@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { resolveTradeParties, requirePayer } from '@/lib/payments/transaction-context'
+import { listingRequiresAgreedTotal, RATE_PRICE_PAYMENT_ERROR } from '@/lib/listings/price-display'
 import { requireTransferCapability } from '@/lib/stripe/connect'
 import { stripe } from '@/lib/stripe/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
@@ -62,13 +63,14 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
   const { listingId, chatId } = validation.data
   const { data: listing, error: listingError } = await supabaseAdmin
     .from('listings')
-    .select('id, price, seller_id, title, main_category, sub_category')
+    .select('id, price, description, seller_id, title, main_category, sub_category')
     .eq('id', listingId)
     .eq('status', 'active')
     .single()
   if (listingError || !listing) {
     throw ErrorFactory.businessLogic('Listing not found or unavailable', { userMessage: 'Listing not found or unavailable' })
   }
+  if (listingRequiresAgreedTotal(listing.description)) throw createValidationError('listingId', RATE_PRICE_PAYMENT_ERROR)
 
   const { data: buyerProfile, error: profileError } = await supabaseAdmin
     .from('profiles')

@@ -7,11 +7,12 @@ import { NewListingButton } from '@/components/features/ads/new-listing-button';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/contexts/i18n-context';
 import { useListingSearch } from './use-listing-search';
+import { formatPublishedListingPrice } from '@/lib/listings/price-policy';
 const Map = dynamic(() => import('@/components/features/map/map-component').then(module => module.Map), {
   ssr: false, loading: () => <div className="h-full animate-pulse bg-muted" />,
 });
 export function SearchHeroSection() {
-  const { t, formatCurrency } = useI18n();
+  const { t, locale } = useI18n();
   const { data, isLoading, error, retry } = useListingSearch('limit=50');
   const listings = data?.listings || [];
   const results = useMemo(() => (data?.listings || []).flatMap(listing => listing.coordinates ? [{
@@ -34,7 +35,7 @@ export function SearchHeroSection() {
             <NewListingButton variant="outline" />
           </div> : <div className="needs-latest-list">{listings.slice(0, 4).map(listing => <Link key={listing.id} href={'/listings/' + encodeURIComponent(listing.id)}>
             <div><h3>{listing.title}</h3><p>{listing.main_category === 'Items' ? t('navbar.items', 'Items') : t('navbar.services', 'Services')}</p></div>
-            <strong>{formatCurrency(listing.price, 'EUR')}</strong><ArrowRight className="h-4 w-4" aria-hidden="true" />
+            <strong>{formatPublishedListingPrice(listing.price, listing.description, locale, listing.main_category, listing.sub_category)}</strong><ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>)}</div>}
       </div>
       <div className="needs-discovery-map"><Map results={results} live={false} /></div>

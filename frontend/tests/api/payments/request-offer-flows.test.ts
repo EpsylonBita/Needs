@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   listing: '20000000-0000-4000-8000-000000000001',
   chat: '30000000-0000-4000-8000-000000000001',
   category: 'Services', subcategory: 'I want',
+  description: '', price: 100,
   chatListing: '', members: [] as string[],
   milestones: [] as Record<string, unknown>[],
   create: vi.fn(), rpc: vi.fn(),
@@ -29,7 +30,7 @@ vi.mock('@/lib/supabase/server', () => ({ supabaseAdmin: {
     const rows = () => {
       if (table === 'feature_flags') return [{ enabled: true }]
       if (table === 'profiles') return filters.user_id ? [{ id: state.actor }] : [{ id: filters.id, stripe_account_id: 'acct_' + filters.id }]
-      if (table === 'listings') return [{ id: state.listing, seller_id: state.owner, price: 100, title: 'Need a plumber', status: 'active', main_category: state.category, sub_category: state.subcategory }]
+      if (table === 'listings') return [{ id: state.listing, seller_id: state.owner, price: state.price, title: 'Need a plumber', description: state.description, status: 'active', main_category: state.category, sub_category: state.subcategory }]
       if (table === 'chats') return [{ id: state.chat, type: 'direct', listing_id: state.chatListing }]
       if (table === 'chat_participants') return state.members.map(user_id => ({ user_id }))
       if (table === 'milestones') return state.milestones.filter(row => Object.entries(filters).every(([key, value]) => row[key] === value))
@@ -60,6 +61,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   state.actor = state.owner
   state.category = 'Services'; state.subcategory = 'I want'
+  state.description = ''; state.price = 100
   state.chatListing = state.listing
   state.members = [state.owner, state.provider]
   state.milestones = []
@@ -68,6 +70,51 @@ beforeEach(() => {
 })
 
 describe('Request and offer payment roles', () => {
+  it('requires price confirmation for stored zero-rate listings instead of suggesting a free exchange', async () => {
+    state.description = 'Home care 10€/hour'; state.price = 0;
+    const response = await context(new NextRequest(`http://localhost/api/payments/context?listingId=${state.listing}&chatId=${state.chat}`, { headers: { Authorization: 'Bearer token' } }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ amount: 0, isFree: false, canPay: false, requiresAgreement: true, priceNeedsConfirmation: true, priceUnit: 'hour' });
+    for (const endpoint of [checkout, fundMilestone, proposeMilestone]) {
+      expect((await endpoint(request({ chatId: state.chat, title: 'First visit', amount: 40 }))).status).toBe(400);
+    }
+    expect(state.create).not.toHaveBeenCalled();
+    expect(state.rpc).not.toHaveBeenCalled();
+  });
+
+  it('keeps an explicit Items/Free exchange free even if prior rate wording remains', async () => {
+    state.description = 'Previously rented at 10€/hour'; state.price = 0;
+    state.category = 'Items'; state.subcategory = 'Free';
+    const response = await context(new NextRequest(`http://localhost/api/payments/context?listingId=${state.listing}&chatId=${state.chat}`, { headers: { Authorization: 'Bearer token' } }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ isFree: true, canPay: false, requiresAgreement: false, priceNeedsConfirmation: false, priceUnit: null });
+  });
+
+  it.each(['μπορω να αναλαβω ηλικιωμενους κατοικον με 10 ευρω την ωρα', 'Care costs 10€/hour or 100€/day', 'Care costs 10€/week', 'από 20€ στα 10 την ώρα', 'was €20 now 10 per week'])('does not silently bill a rate as a total: %s', async description => {
+    state.description = description
+    for (const endpoint of [checkout, fundMilestone, proposeMilestone]) {
+      const result = await endpoint(request({ chatId: state.chat, title: 'First visit', amount: 40 }))
+      expect(result.status).toBe(400)
+      expect(JSON.stringify(await result.json())).toContain('rate per unit')
+    }
+    expect(state.create).not.toHaveBeenCalled()
+    expect(state.rpc).not.toHaveBeenCalled()
+  })
+
+  it('keeps a stated total for a duration payable without treating it as a recurring rate', async () => {
+    state.description = 'The full visit costs 100€ for 2 hours'
+    expect((await checkout(request({ chatId: state.chat }))).status).toBe(200)
+    expect(state.create).toHaveBeenCalledWith(expect.objectContaining({ amount: 10000 }), expect.anything())
+  })
+
+  it('returns a non-free hourly rate with agreement instructions instead of a payable total', async () => {
+    state.description = 'μπορω να αναλαβω ηλικιωμενους κατοικον με 10 ευρω την ωρα'
+    const response = await context(new NextRequest(`http://localhost/api/payments/context?listingId=${state.listing}&chatId=${state.chat}`, { headers: { Authorization: 'Bearer token' } }))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ canPay: false, isFree: false, requiresAgreement: true, priceUnit: 'hour' })
+    expect(state.create).not.toHaveBeenCalled()
+  })
+
   it.each([['Services', 'I want'], ['Items', 'Buy']])('lets the %s/%s requester pay their chat provider', async (category, subcategory) => {
     state.category = category; state.subcategory = subcategory
     const response = await checkout(request({ chatId: state.chat }))

@@ -5,11 +5,14 @@ import Link from 'next/link'
 import { useI18n } from '@/contexts/i18n-context'
 import { supabase } from '@/lib/supabase/client'
 import { withCsrfHeaders } from '@/lib/utils/csrf'
+import { formatListingPriceUnit, RATE_PRICE_PAYMENT_ERROR, type ListingPriceUnit } from '@/lib/listings/price-display'
 
 type PaymentContext = {
   listingId: string; chatId: string; buyerId: string; sellerId: string; currentProfileId: string;
   isFree: boolean; canPay: boolean; sellerOnboarded: boolean; paymentsEnabled: boolean; milestonesEnabled: boolean;
   title: string; amount: number; subCategory: string;
+  requiresAgreement?: boolean; priceUnit?: ListingPriceUnit | null;
+  priceNeedsConfirmation?: boolean;
 }
 
 export type ChatTransactionPanelProps = {
@@ -28,6 +31,8 @@ const messages = {
     invalidMilestone: 'Enter a milestone title and a positive amount', milestoneSignIn: 'Sign in to create a milestone',
     milestoneError: 'Milestone could not be saved', messageError: 'Milestone saved, but its chat message failed. Check Milestones before trying again.',
     sessionChanged: 'Your account changed. Open this conversation again before saving.',
+    rate: 'Rate per unit', rateHint: 'Agree on the total cost in this conversation. This listing has a rate per unit, so it cannot yet be paid as a fixed total online.',
+    priceNeedsConfirmation: 'Price needs confirmation',
   },
   el: {
     loading: 'Φόρτωση στοιχείων πληρωμής…', contextSignIn: 'Συνδέσου για να δεις τα στοιχεία πληρωμής.',
@@ -36,6 +41,8 @@ const messages = {
     invalidMilestone: 'Συμπλήρωσε έναν τίτλο σταδίου και ένα θετικό ποσό', milestoneSignIn: 'Συνδέσου για να δημιουργήσεις ένα στάδιο',
     milestoneError: 'Το στάδιο δεν αποθηκεύτηκε', messageError: 'Το στάδιο αποθηκεύτηκε, αλλά το μήνυμα στη συνομιλία απέτυχε. Έλεγξε τα στάδια πριν δοκιμάσεις ξανά.',
     sessionChanged: 'Άλλαξε ο λογαριασμός σου. Άνοιξε ξανά τη συνομιλία πριν αποθηκεύσεις.',
+    rate: 'Χρέωση ανά μονάδα', rateHint: 'Συμφωνήστε το συνολικό κόστος σε αυτή τη συνομιλία. Η αγγελία έχει χρέωση ανά μονάδα, οπότε δεν μπορεί ακόμη να πληρωθεί ως συνολικό ποσό online.',
+    priceNeedsConfirmation: 'Η τιμή χρειάζεται επιβεβαίωση',
   },
 }
 
@@ -84,7 +91,10 @@ function TransactionContent({ chatId, listingId, profileId, userId, onSendMessag
       if (!response.ok) throw new Error(responseError(data, copy.contextError))
       if (!data || data.listingId !== listingId || data.chatId !== chatId || data.currentProfileId !== profileId
         || typeof data.buyerId !== 'string' || typeof data.sellerId !== 'string'
-        || !['isFree', 'canPay', 'sellerOnboarded', 'paymentsEnabled', 'milestonesEnabled'].every(key => typeof data[key] === 'boolean')) {
+        || !['isFree', 'canPay', 'sellerOnboarded', 'paymentsEnabled', 'milestonesEnabled'].every(key => typeof data[key] === 'boolean')
+        || (data.requiresAgreement !== undefined && typeof data.requiresAgreement !== 'boolean')
+        || (data.priceNeedsConfirmation !== undefined && typeof data.priceNeedsConfirmation !== 'boolean')
+        || (data.priceUnit != null && !['hour', 'day', 'month'].includes(data.priceUnit))) {
         throw new Error(copy.contextInvalid)
       }
       if (!controller.signal.aborted) { setTransaction(data); setContextError(null) }
@@ -96,7 +106,7 @@ function TransactionContent({ chatId, listingId, profileId, userId, onSendMessag
   }, [chatId, listingId, profileId, userId, copy])
 
   async function saveMilestone() {
-    if (saving || !transaction?.canPay || transaction.isFree || !transaction.milestonesEnabled || !transaction.paymentsEnabled) return
+    if (saving || !transaction?.canPay || transaction.requiresAgreement || transaction.isFree || !transaction.milestonesEnabled || !transaction.paymentsEnabled) return
     const milestoneTitle = title.trim()
     const milestoneAmount = Number(amount)
     if (!milestoneTitle || !Number.isFinite(milestoneAmount) || milestoneAmount <= 0) { setError(copy.invalidMilestone); return }
@@ -127,31 +137,32 @@ function TransactionContent({ chatId, listingId, profileId, userId, onSendMessag
       setAmount('')
       await onSendMessage(chatId, `[MILESTONE] ${milestoneTitle} - ${milestoneAmount}`)
     } catch (failure) {
-      if (isCurrent()) setError(created ? copy.messageError : failure instanceof Error ? failure.message : copy.milestoneError)
+      if (isCurrent()) setError(created ? copy.messageError : failure instanceof Error ? failure.message === RATE_PRICE_PAYMENT_ERROR ? copy.rateHint : failure.message : copy.milestoneError)
     } finally {
       if (isCurrent()) setSaving(false)
     }
   }
 
   const isRequest = transaction?.subCategory === 'Buy' || transaction?.subCategory === 'I want'
-  const canCreateMilestone = !!transaction?.canPay && !transaction.isFree && transaction.milestonesEnabled && transaction.paymentsEnabled
+  const canCreateMilestone = !!transaction?.canPay && !transaction.requiresAgreement && !transaction.isFree && transaction.milestonesEnabled && transaction.paymentsEnabled
   return <div className="space-y-3 border-b border-border p-4">
     {contextError && <p role="alert" className="text-sm text-destructive">{contextError}</p>}
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     {!transaction && !contextError && <p role="status" className="text-sm text-muted-foreground">{copy.loading}</p>}
     {transaction && <div className="flex flex-wrap items-center gap-2">
+      {transaction.requiresAgreement && <div className="w-full space-y-1 text-sm"><p className="font-medium">{copy.rate}: {transaction.priceNeedsConfirmation || transaction.amount <= 0 ? copy.priceNeedsConfirmation : formatListingPriceUnit(transaction.amount, transaction.priceUnit || undefined, locale)}</p><p className="text-muted-foreground">{copy.rateHint}</p></div>}
       {transaction.isFree && <p className="w-full text-sm text-muted-foreground">{t('chat.freeExchange', locale === 'el' ? 'Συμφωνήστε τη δωρεάν παραχώρηση σε αυτή τη συνομιλία.' : 'Arrange the free exchange in this conversation.')}</p>}
-      {transaction.canPay && !transaction.isFree && transaction.paymentsEnabled && transaction.sellerOnboarded && <Link href={`/payments/checkout/${encodeURIComponent(listingId)}?chatId=${encodeURIComponent(chatId)}`} className="inline-flex min-h-11 items-center rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground">
+      {transaction.canPay && !transaction.requiresAgreement && !transaction.isFree && transaction.paymentsEnabled && transaction.sellerOnboarded && <Link href={`/payments/checkout/${encodeURIComponent(listingId)}?chatId=${encodeURIComponent(chatId)}`} className="inline-flex min-h-11 items-center rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground">
         {isRequest ? t('chat.payProvider', locale === 'el' ? 'Πληρωμή παρόχου' : 'Pay provider') : t('chat.get', locale === 'el' ? 'Αγορά' : 'Get')}
       </Link>}
-      {!transaction.isFree && !transaction.canPay && <p className="w-full text-sm text-muted-foreground">{isRequest
+      {!transaction.isFree && !transaction.requiresAgreement && !transaction.canPay && <p className="w-full text-sm text-muted-foreground">{isRequest
         ? t('chat.requesterPays', locale === 'el' ? 'Ο ενδιαφερόμενος σε πληρώνει αφού συμφωνήσετε για την εργασία ή το αντικείμενο.' : 'The requester pays you after you agree on the work or item.')
         : t('chat.buyerPays', locale === 'el' ? 'Ο αγοραστής μπορεί να προχωρήσει στην πληρωμή από τη συνομιλία του.' : 'The buyer can continue to payment from their conversation.')}</p>}
       <Link href={`/profile/${encodeURIComponent(transaction.currentProfileId === transaction.sellerId ? transaction.buyerId : transaction.sellerId)}`} className="inline-flex min-h-11 items-center rounded-lg border border-border px-3 text-sm hover:bg-muted">{transaction.currentProfileId === transaction.sellerId
         ? t('chat.viewBuyer', locale === 'el' ? 'Προφίλ αγοραστή' : 'View Buyer')
         : t('chat.viewSeller', locale === 'el' ? 'Προφίλ παρόχου' : 'View Seller')}</Link>
-      {!transaction.isFree && !transaction.paymentsEnabled && <p className="text-sm text-muted-foreground">{t('chat.paymentsDisabled', locale === 'el' ? 'Οι πληρωμές δεν είναι διαθέσιμες αυτή τη στιγμή.' : 'Payments are currently unavailable.')}</p>}
-      {!transaction.isFree && transaction.paymentsEnabled && !transaction.sellerOnboarded && (transaction.currentProfileId === transaction.sellerId
+      {!transaction.isFree && !transaction.requiresAgreement && !transaction.paymentsEnabled && <p className="text-sm text-muted-foreground">{t('chat.paymentsDisabled', locale === 'el' ? 'Οι πληρωμές δεν είναι διαθέσιμες αυτή τη στιγμή.' : 'Payments are currently unavailable.')}</p>}
+      {!transaction.isFree && !transaction.requiresAgreement && transaction.paymentsEnabled && !transaction.sellerOnboarded && (transaction.currentProfileId === transaction.sellerId
         ? <Link href="/payments/onboarding" className="inline-flex min-h-11 items-center text-sm text-primary underline">{t('chat.setupPayments', locale === 'el' ? 'Ενεργοποίησε τη λήψη πληρωμών' : 'Set up receiving payments')}</Link>
         : <span className="rounded bg-amber-500/10 px-2 py-1 text-xs text-amber-800 dark:text-amber-200">{t('chat.providerNotReady', locale === 'el' ? 'Ο πάροχος δεν έχει ενεργοποιήσει τις πληρωμές.' : 'The provider has not set up payments yet.')}</span>)}
       {canCreateMilestone && <button type="button" disabled={saving} onClick={() => setShowMilestoneForm(value => !value)} className="min-h-11 rounded-lg border border-border px-3 text-sm hover:bg-muted disabled:opacity-50">{copy.addMilestone}</button>}

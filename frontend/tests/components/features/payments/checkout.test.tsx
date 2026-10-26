@@ -31,6 +31,15 @@ beforeEach(async () => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
 describe('Existing checkout workflow', () => {
+  it('explains a rate-only listing in Greek instead of opening a fixed-total payment form', async () => {
+    mocks.locale = 'el'
+    mocks.fetch.mockResolvedValue({ ok: false, json: async () => ({ error: 'This listing uses a rate per unit. Agree on a total in chat before online payment.' }) })
+    render(<Checkout listingId="rate-listing" />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('χρέωση ανά μονάδα')
+    expect(screen.queryByTestId('payment-element')).not.toBeInTheDocument()
+    expect(mocks.confirm).not.toHaveBeenCalled()
+  })
+
   it('localizes checkout and Stripe fields without recreating the payment intent on language change', async () => {
     const view = render(<Checkout listingId="listing-1" />)
     await screen.findByTestId('payment-element')

@@ -30,6 +30,38 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('Listing discovery', () => {
+  it('shows stored zero-rate prices as needing confirmation across discovery surfaces', async () => {
+    request.mockResolvedValue({ ok: true, json: async () => ({ listings: [{ id: 'rate-listing', title: 'Home care', description: 'Home care 10€/hour', price: 0, main_category: 'Services', sub_category: 'I can' }], pagination: { total: 1, page: 1, totalPages: 1 } }) });
+    const results = render(<NuqsTestingAdapter searchParams=""><SearchResults /></NuqsTestingAdapter>);
+    expect(await screen.findByText('Price needs confirmation')).toBeInTheDocument();
+    expect(screen.queryByText('Free')).not.toBeInTheDocument();
+    results.unmount();
+    const detail = render(<ListingDetail id="rate-listing" />);
+    expect(await screen.findByText('Price needs confirmation')).toBeInTheDocument();
+    detail.unmount();
+    render(<SearchHeroSection />);
+    expect(await screen.findByText('Price needs confirmation')).toBeInTheDocument();
+  });
+
+  it('keeps explicit Items/Free discovery labels despite earlier rate wording', async () => {
+    request.mockResolvedValue({ ok: true, json: async () => ({ listings: [{ id: 'free-listing', title: 'Free bicycle', description: 'Previously rented at 10€/hour', price: 0, main_category: 'Items', sub_category: 'Free' }], pagination: { total: 1, page: 1, totalPages: 1 } }) });
+    render(<NuqsTestingAdapter searchParams=""><SearchResults /></NuqsTestingAdapter>);
+    expect(await screen.findAllByText('Free')).toHaveLength(2);
+    expect(screen.queryByText('Price needs confirmation')).not.toBeInTheDocument();
+  });
+
+  it('preserves an hourly basis in result cards, listing detail and the home listing preview', async () => {
+    request.mockResolvedValue({ ok: true, json: async () => ({ listings: [{ id: 'rate-listing', title: 'Home care', description: 'Care at home for 10 euros per hour', price: 10, main_category: 'Services', sub_category: 'I can', coordinates: [23.72, 37.98] }], pagination: { total: 1, page: 1, totalPages: 1 } }) })
+    const results = render(<NuqsTestingAdapter searchParams=""><SearchResults /></NuqsTestingAdapter>)
+    expect(await screen.findByText('€10.00/hour')).toBeInTheDocument()
+    results.unmount()
+    const detail = render(<ListingDetail id="rate-listing" />)
+    expect(await screen.findByText('€10.00/hour')).toBeInTheDocument()
+    detail.unmount()
+    render(<SearchHeroSection />)
+    expect(await screen.findByText('€10.00/hour')).toBeInTheDocument()
+  })
+
   it('searches the newly typed text, including clearing the search', async () => {
     const onSearch = vi.fn();
     render(<SearchBar onSearch={onSearch} />);
