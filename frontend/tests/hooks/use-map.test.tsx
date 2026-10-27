@@ -63,6 +63,7 @@ describe('create-listing map theme', () => {
     let dispose: (() => void) | undefined;
     act(() => { dispose = result.current.initializeMap('location-map', { center: [23.72, 37.98], zoom: 12 }); });
     expect(state.createMap).toHaveBeenCalledWith(expect.objectContaining({ style: 'mapbox://styles/mapbox/dark-v11', center: [23.72, 37.98], zoom: 12 }));
+    expect(state.createMap).toHaveBeenCalledWith(expect.objectContaining({ performanceMetricsCollection: false }));
     expect(result.current.map!.setStyle).not.toHaveBeenCalled();
     act(() => dispose?.());
   });

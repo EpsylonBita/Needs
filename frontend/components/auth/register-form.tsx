@@ -49,7 +49,8 @@ export function RegisterForm({ isOpen, onClose, onAuthenticated, onBusyChange }:
     onBusyChange?.(true);
     try {
       const result = await signUp(data);
-      toast({ title: t('auth.register.success', 'Account created'), description: result.requiresEmailConfirmation
+      // Email confirmation still needs instructions; an authenticated continuation has its own next screen.
+      if (result.requiresEmailConfirmation || !onAuthenticated) toast({ title: t('auth.register.success', 'Account created'), description: result.requiresEmailConfirmation
         ? t('auth.register.confirm', 'Check your email to confirm your account before signing in.')
         : t('auth.register.ready', 'Your account is ready. Welcome to Needs.') });
       if (result.requiresEmailConfirmation) onClose();

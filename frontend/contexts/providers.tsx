@@ -4,6 +4,7 @@ import { ReactNode, useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from 'next-themes';
 import { NuqsAdapter } from 'nuqs/adapters/next/app';
+import { MotionConfig } from 'framer-motion';
 import { AuthProvider } from './auth-context';
 import { I18nProvider } from './i18n-context';
 import { ProfileProvider } from './profile-context';
@@ -38,7 +39,9 @@ export function ContextProviders({ children, nonce, initialLocale }: { children:
         <AuthProvider>
           <ProfileProvider>
             <I18nProvider initialLocale={initialLocale}>
-              <NuqsAdapter>{children}</NuqsAdapter>
+              <MotionConfig reducedMotion="user">
+                <NuqsAdapter>{children}</NuqsAdapter>
+              </MotionConfig>
             </I18nProvider>
           </ProfileProvider>
         </AuthProvider>

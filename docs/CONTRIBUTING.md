@@ -13,7 +13,7 @@ Thank you for your interest in contributing!
 4.  **Test**: Run tests to ensure no regressions.
     ```bash
     cd frontend
-    pnpm test
+    npm run test
     ```
 5.  **Commit**: Write clear, descriptive commit messages.
 6.  **Push**: Push your branch to your fork.
@@ -22,7 +22,7 @@ Thank you for your interest in contributing!
 ## Code Style
 
 - **TypeScript**: We use TypeScript for type safety. Ensure no `any` types where possible.
-- **Linting**: Run `pnpm lint` to check for linting errors.
+- **Linting**: Run `npm run lint` from `frontend/` to check for linting errors.
 - **Formatting**: Code should be formatted consistent with the project's Prettier config.
 
 ## Project Structure

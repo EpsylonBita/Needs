@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, ArrowRight, Check, Loader2, Sparkles } from 'lucide-react';
 import type mapboxgl from 'mapbox-gl';
 import { useForm, useWatch } from 'react-hook-form';
-import { toast } from 'sonner';
+import { motion, useReducedMotion } from 'framer-motion';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -24,6 +24,8 @@ import { listingPriceNeedsConfirmation } from '@/lib/listings/price-policy';
 import { CategoryTagsPicker } from './category-tags-picker';
 import { ImageUploader } from './image-uploader';
 import { LocationPicker } from './location-picker';
+import { ListingPublished } from './listing-published';
+import { PriceGuidance } from './price-guidance';
 
 type FormValues = { title: string; description: string; category: string; subcategory: string; price: string; contactNumber: string; location: string };
 type DraftField = 'title' | 'category' | 'subcategory' | 'price' | 'contactNumber' | 'location';
@@ -46,6 +48,9 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
   const profilePhone = user?.phoneNumber?.trim() ?? '';
   const queryClient = useQueryClient();
   const [step, setStep] = useState<1 | 2>(1);
+  const reduceMotion = useReducedMotion();
+  const photosSection = useRef<HTMLElement>(null);
+  const [publishedListing, setPublishedListing] = useState<{ id: string; title: string } | null>(null);
   const [photos, setPhotos] = useState<{ file: File; preview: string }[]>([]);
   const [isReadingPhotos, setIsReadingPhotos] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -80,6 +85,7 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
   const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { ...defaults, contactNumber: profilePhone } });
   const { register, handleSubmit, setValue, getValues, formState: { errors } } = form;
   const description = useWatch({ control: form.control, name: 'description' });
+  const title = useWatch({ control: form.control, name: 'title' });
   const isAnalyzing = analyzedDescription !== description;
   const selectedCategory = useWatch({ control: form.control, name: 'category' });
   const selectedSubcategory = useWatch({ control: form.control, name: 'subcategory' });
@@ -100,7 +106,7 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
     return { tags: [], smartTags: [...new Map(tags.filter(tag => tag.trim() && tag.length <= 50).map(tag => [tag.toLocaleLowerCase(), tag])).values()].slice(0, 20) };
   }, [extracted, selectedCategory, price, priceUnit, locationArea, el]);
   const selectedTags = useMemo(() => [...new Map([...tagEdits.added, ...analysis.smartTags.filter(tag => !tagEdits.removed.includes(tag))].map(tag => [tag.toLocaleLowerCase(), tag])).values()].slice(0, 20), [analysis, tagEdits]);
-  useEffect(() => { if (open && step === 2) form.setFocus('description'); }, [open, step, form]);
+  useEffect(() => { if (open && step === 2 && !publishedListing) form.setFocus('description'); }, [open, step, form, publishedListing]);
 
   useEffect(() => () => { ++photoRevision.current; ++revision.current; }, []);
 
@@ -209,7 +215,7 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
   };
 
   const onSubmit = async (data: FormValues) => {
-    if (step !== 2 || submitting.current || isAnalyzing || isLocating || photoBusy.current || savedListingId) return;
+    if (step !== 2 || submitting.current || isAnalyzing || isLocating || photoBusy.current || savedListingId || publishedListing) return;
     submitting.current = true; setIsSubmitting(true); setError(null); setOnboardRequired(false);
     let createdId: string | undefined;
     const creatingUserId = user?.id;
@@ -227,8 +233,7 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
       const created = await createListing({ title: data.title, description: data.description, main_category: data.category as 'Items' | 'Services', sub_category: data.subcategory as 'Buy' | 'Sell' | 'Free' | 'I want' | 'I will' | 'I can', price: data.subcategory === 'Free' ? '0' : data.price, tags: selectedTags, coordinates: point, address: { label: data.location }, contact_number: data.contactNumber });
       createdId = created.id;
       if (photos.length) await uploadListingImages(created.id, photos.map(photo => photo.file));
-      toast.success(el ? 'Η αγγελία σου δημοσιεύτηκε!' : 'Your listing is published!');
-      onOpenChange(false);
+      setPublishedListing({ id: created.id, title: data.title });
     } catch (failure) {
       if (createdId) {
         const failedListingId = createdId;
@@ -256,41 +261,49 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
   const fieldA11y = (field: keyof FormValues) => ({ 'aria-invalid': !!errors[field], 'aria-describedby': errors[field] ? `create-${field}-error` : undefined });
 
   return <Dialog open={open} onOpenChange={value => { if (!submitting.current && !photoBusy.current) onOpenChange(value); }}>
-    <DialogContent closeLabel={el ? 'Κλείσιμο' : 'Close'} closeDisabled={isSubmitting || isReadingPhotos} className="flex max-h-[92dvh] w-[calc(100%-1rem)] flex-col overflow-hidden rounded-3xl bg-card p-5 text-card-foreground sm:max-w-[640px] sm:p-7" onInteractOutside={event => event.preventDefault()}>
+    <DialogContent closeLabel={el ? 'Κλείσιμο' : 'Close'} closeDisabled={isSubmitting || isReadingPhotos} className="flex max-h-[92dvh] w-[calc(100%-1rem)] flex-col gap-3 overflow-hidden rounded-3xl bg-card p-4 text-card-foreground sm:max-w-[640px] sm:gap-4 sm:rounded-3xl sm:p-6" onInteractOutside={event => event.preventDefault()}>
+      {publishedListing ? <ListingPublished listing={publishedListing} isGreek={el} onDone={() => onOpenChange(false)} /> : <>
       <DialogHeader className="shrink-0 pr-9 text-left">
-        <DialogTitle className="text-2xl font-semibold tracking-tight">{el ? 'Νέα αγγελία' : 'New listing'}</DialogTitle>
-        <DialogDescription>{el ? 'Λίγα βήματα, και είσαι έτοιμος.' : 'A few details and you’re ready.'}</DialogDescription>
+        <DialogTitle className="text-xl font-semibold tracking-tight sm:text-2xl">{el ? 'Νέα αγγελία' : 'New listing'}</DialogTitle>
+        <DialogDescription className="text-sm leading-5">{el ? 'Λίγα βήματα, και είσαι έτοιμος.' : 'A few details and you’re ready.'}</DialogDescription>
       </DialogHeader>
-      <ol aria-label={el ? 'Βήματα αγγελίας' : 'Listing steps'} className="grid shrink-0 grid-cols-2 gap-2 text-sm">
-        {[el ? 'Φωτογραφίες' : 'Photos', el ? 'Πληροφορίες' : 'Details'].map((label, index) => <li key={label} aria-current={step === index + 1 ? 'step' : undefined} className={`flex items-center gap-2 rounded-xl px-3 py-2.5 ${step === index + 1 ? 'bg-primary/10 font-medium text-primary' : 'bg-muted text-muted-foreground'}`}><span className="flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs">{step > index + 1 ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : index + 1}</span>{label}</li>)}
+      <ol aria-label={el ? 'Βήματα αγγελίας' : 'Listing steps'} className="flex shrink-0 items-center border-b border-border pb-3 text-sm sm:pb-4">
+        {[el ? 'Φωτογραφίες' : 'Photos', el ? 'Πληροφορίες' : 'Details'].map((label, index) => <li key={label} aria-current={step === index + 1 ? 'step' : undefined} className={`flex min-w-0 items-center gap-2 ${index === 0 ? 'flex-1' : 'shrink-0'} ${step >= index + 1 ? 'text-primary' : 'text-muted-foreground'}`}>
+          <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors duration-200 ${step >= index + 1 ? 'bg-primary text-primary-foreground' : 'border border-border bg-background'}`}>{step > index + 1 ? <motion.span initial={reduceMotion ? false : { scale: 0.7 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 460, damping: 26 }}><Check className="h-3.5 w-3.5" aria-hidden="true" /></motion.span> : index + 1}</span>
+          <span className={step === index + 1 ? 'font-semibold' : 'font-medium'}>{label}</span>
+          {index === 0 && <span aria-hidden="true" className="mx-3 h-px flex-1 overflow-hidden bg-border sm:mx-5"><motion.span className="block h-full origin-left bg-primary" initial={false} animate={{ scaleX: step === 2 ? 1 : 0 }} transition={{ duration: reduceMotion ? 0 : 0.24, ease: [0.22, 1, 0.36, 1] }} /></span>}
+        </li>)}
       </ol>
       <form noValidate onSubmit={event => { void handleSubmit(onSubmit)(event); }} className="flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 pb-2"><fieldset disabled={isSubmitting || !!savedListingId} className="min-w-0">
-          {step === 1 && <section className="space-y-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200">
+          {step === 1 && <section ref={photosSection} tabIndex={-1} aria-label={el ? 'Φωτογραφίες αγγελίας' : 'Listing photos'} className="space-y-3 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-200">
             <ImageUploader imagePreviews={photos.map(photo => photo.preview)} onRemove={index => setPhotos(previous => previous.filter((_, i) => i !== index))} onChange={addPhotos} disabled={isReadingPhotos} />
             {isReadingPhotos && <p role="status" className="text-sm text-muted-foreground">{el ? 'Προετοιμασία φωτογραφιών…' : 'Preparing photos…'}</p>}
             {photoError && <p role="alert" className="text-sm text-destructive">{photoError}</p>}
           </section>}
-          <section hidden={step !== 2} className="space-y-5 pt-2 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
-            <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
-              <Label htmlFor="create-description" className="text-base font-semibold">{el ? 'Τι θέλεις να ανεβάσεις;' : 'What would you like to list?'}</Label>
-              <Textarea id="create-description" {...register('description')} {...fieldA11y('description')} maxLength={10000} placeholder={el ? 'Π.χ. Πωλώ μεταχειρισμένο ποδήλατο σε καλή κατάσταση, 120€.' : 'E.g. Selling a used bicycle in good condition for 120€.'} className="mt-2 min-h-28 resize-y bg-background text-base" />
+          <section hidden={step !== 2} className="space-y-4 pt-1 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
+            <div className="space-y-2">
+              <Label htmlFor="create-description" className="text-sm font-semibold">{el ? 'Τι θέλεις να ανεβάσεις;' : 'What would you like to list?'}</Label>
+              <Textarea id="create-description" {...register('description')} {...fieldA11y('description')} maxLength={10000} placeholder={el ? 'Π.χ. Πωλώ μεταχειρισμένο ποδήλατο σε καλή κατάσταση, 120€.' : 'E.g. Selling a used bicycle in good condition for 120€.'} className="min-h-24 resize-y rounded-xl bg-background text-base shadow-none" />
               {fieldError('description')}
-              <p role="status" aria-live="polite" className="mt-2 flex items-start gap-2 text-xs leading-relaxed text-muted-foreground"><Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />{isAnalyzing ? (el ? 'Συμπληρώνουμε όσα αναγνωρίζουμε…' : 'Filling in recognized details…') : (el ? 'Κατηγορία, είδος, τίτλος, τιμή και tags συμπληρώνονται από το κείμενό σου. Έλεγξέ τα και άλλαξε ό,τι θέλεις.' : 'Category, type, title, price and tags fill from your text. Review them and change anything.')}</p>
+              <p role="status" aria-live="polite" className="flex items-start gap-1.5 text-xs leading-5 text-muted-foreground"><Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />{isAnalyzing ? (el ? 'Συμπληρώνουμε όσα αναγνωρίζουμε…' : 'Filling in recognized details…') : (el ? 'Κατηγορία, είδος, τίτλος, τιμή και tags συμπληρώνονται από το κείμενό σου. Έλεγξέ τα και άλλαξε ό,τι θέλεις.' : 'Category, type, title, price and tags fill from your text. Review them and change anything.')}</p>
             </div>
             <CategoryTagsPicker selectedCategory={selectedCategory} selectedSubcategory={selectedSubcategory} selectedTags={selectedTags} analysis={analysis} isLoadingTags={isAnalyzing} onCategorySelect={value => { manual.current.add('category'); manual.current.add('subcategory'); setValue('category', value, { shouldValidate: true }); setValue('subcategory', ''); }} onSubcategorySelect={value => { manual.current.add('category'); manual.current.add('subcategory'); setValue('subcategory', value, { shouldValidate: true }); if (value === 'Free') { manual.current.add('price'); setValue('price', '0'); } }} onToggleTag={toggleTag} onAddTag={tag => { if (!selectedTags.includes(tag)) toggleTag(tag); }} categoryError={errors.category?.message} subcategoryError={errors.subcategory?.message}>
-            <div><Label htmlFor="create-title">{el ? 'Τίτλος' : 'Title'}</Label><Input id="create-title" {...register('title')} onChange={event => { manual.current.add('title'); void register('title').onChange(event); }} {...fieldA11y('title')} maxLength={200} className="mt-2 min-h-11 text-base" />{fieldError('title')}</div>
-            <div><Label htmlFor="create-price">{el ? 'Τιμή (€)' : 'Price (€)'}</Label><Input id="create-price" {...register('price')} onChange={event => { manual.current.add('price'); void register('price').onChange(event); }} {...fieldA11y('price')} aria-describedby={`create-price-help${errors.price ? ' create-price-error' : ''}`} disabled={selectedSubcategory === 'Free'} inputMode="decimal" placeholder="0" className="mt-2 min-h-11 text-base" /><p id="create-price-help" className="mt-1 text-xs text-muted-foreground">{priceHelp}</p>{fieldError('price')}</div>
+            <div><Label htmlFor="create-title">{el ? 'Τίτλος' : 'Title'}</Label><Input id="create-title" {...register('title')} onChange={event => { manual.current.add('title'); void register('title').onChange(event); }} {...fieldA11y('title')} maxLength={200} className="mt-1.5 h-11 rounded-xl bg-background text-base shadow-none" />{fieldError('title')}</div>
+            <div className="grid gap-4 sm:grid-cols-2">
+            <div><Label htmlFor="create-price">{el ? 'Τιμή (€)' : 'Price (€)'}</Label><Input id="create-price" {...register('price')} onChange={event => { manual.current.add('price'); void register('price').onChange(event); }} {...fieldA11y('price')} aria-describedby={`create-price-help${errors.price ? ' create-price-error' : ''}`} disabled={selectedSubcategory === 'Free'} inputMode="decimal" placeholder="0" className="mt-1.5 h-11 rounded-xl bg-background text-base shadow-none" /><p id="create-price-help" className="mt-1 text-xs text-muted-foreground">{priceHelp}</p>{fieldError('price')}{(selectedCategory === 'Items' || selectedCategory === 'Services') && (selectedSubcategory === 'Sell' || selectedSubcategory === 'I will' || selectedSubcategory === 'I can') && <PriceGuidance subject={{ title, description, mainCategory: selectedCategory, subCategory: selectedSubcategory, coordinates }} price={price} />}</div>
+            <div><Label htmlFor="create-contact">{el ? 'Τηλέφωνο (προαιρετικό)' : 'Phone (optional)'}</Label><Input id="create-contact" {...register('contactNumber')} onChange={event => { manual.current.add('contactNumber'); void register('contactNumber').onChange(event); }} {...fieldA11y('contactNumber')} type="tel" autoComplete="tel" maxLength={50} className="mt-1.5 h-11 rounded-xl bg-background text-base shadow-none" /><p className="mt-1 text-xs text-muted-foreground">{profilePhone && contactNumber === profilePhone ? (el ? 'Συμπληρώθηκε από το προφίλ σου. Θα εμφανίζεται στην αγγελία· μπορείς να το αλλάξεις ή να το αφαιρέσεις.' : 'Filled from your profile. Visible on your listing; you can change or remove it.') : (el ? 'Θα εμφανίζεται στην αγγελία σου. Μπορείς να επικοινωνείς μόνο με μηνύματα.' : 'Visible on your listing. You can use messages only instead.')}</p>{fieldError('contactNumber')}</div>
+            </div>
             </CategoryTagsPicker>
             <LocationPicker locationName={locationName} showMap={showMap} coordinates={coordinates} isLocating={isLocating} errorMessage={errors.location?.message} onLocationNameChange={changeLocation} onLocationSelect={selectLocation} onToggleMap={() => { if (!process.env.NEXT_PUBLIC_MAPBOX_TOKEN) setError(el ? 'Ο χάρτης δεν είναι διαθέσιμος.' : 'The map is unavailable.'); else setShowMap(value => !value); }} onUseCurrentLocation={geolocate} />
-            <div><Label htmlFor="create-contact">{el ? 'Τηλέφωνο (προαιρετικό)' : 'Phone (optional)'}</Label><Input id="create-contact" {...register('contactNumber')} onChange={event => { manual.current.add('contactNumber'); void register('contactNumber').onChange(event); }} {...fieldA11y('contactNumber')} type="tel" autoComplete="tel" maxLength={50} className="mt-2 min-h-11 text-base" /><p className="mt-1 text-xs text-muted-foreground">{profilePhone && contactNumber === profilePhone ? (el ? 'Συμπληρώθηκε από το προφίλ σου. Θα εμφανίζεται στην αγγελία· μπορείς να το αλλάξεις ή να το αφαιρέσεις.' : 'Filled from your profile. Visible on your listing; you can change or remove it.') : (el ? 'Θα εμφανίζεται στην αγγελία σου. Μπορείς να επικοινωνείς μόνο με μηνύματα.' : 'Visible on your listing. You can use messages only instead.')}</p>{fieldError('contactNumber')}</div>
           </section>
         </fieldset></div>
         {error && <div role="alert" className="mt-3 max-h-32 shrink-0 overflow-y-auto rounded-xl border border-destructive/25 bg-destructive/5 p-3 text-sm"><p>{error}</p>{onboardRequired && <a className="mt-2 inline-flex min-h-11 items-center font-medium text-primary underline" href="/payments/onboarding" target="_blank" rel="noopener noreferrer">{el ? 'Ρύθμιση πληρωμών (νέα καρτέλα)' : 'Set up payments (new tab)'}</a>}{savedListingId && <a className="mt-2 inline-flex min-h-11 items-center font-medium text-primary underline" href={`/dashboard/listings/${savedListingId}/images`}>{el ? 'Διαχείριση φωτογραφιών' : 'Manage photos'}</a>}</div>}
-        <div className="mt-4 flex shrink-0 items-center justify-between gap-3 border-t border-border pt-4">
-          {step === 1 ? <><span className="text-xs text-muted-foreground">{el ? 'Οι φωτογραφίες είναι προαιρετικές' : 'Photos are optional'}</span><Button type="button" disabled={isReadingPhotos} onClick={event => { event.preventDefault(); setStep(2); }} className="min-h-11 shrink-0">{photos.length ? (el ? 'Συνέχεια' : 'Continue') : (el ? 'Χωρίς φωτογραφία' : 'Skip photos')}<ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" /></Button></> : <><Button type="button" variant="ghost" disabled={isSubmitting || !!savedListingId} onClick={() => setStep(1)} className="min-h-11"><ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />{el ? 'Πίσω' : 'Photos'}{photos.length > 0 && ` (${photos.length})`}</Button><Button key="publish-listing" type="submit" disabled={isSubmitting || isAnalyzing || isLocating || !!savedListingId} className="min-h-11">{isSubmitting && <Loader2 aria-hidden="true" className="mr-2 h-4 w-4 animate-spin" />}{isSubmitting ? (el ? 'Δημοσίευση…' : 'Publishing…') : (el ? 'Δημοσίευση' : 'Publish listing')}</Button></>}
+        <div className="mt-3 flex shrink-0 items-center justify-between gap-3 border-t border-border pt-3 sm:mt-4 sm:pt-4">
+          {step === 1 ? <><span className="text-xs text-muted-foreground">{el ? 'Οι φωτογραφίες είναι προαιρετικές' : 'Photos are optional'}</span><Button type="button" disabled={isReadingPhotos} onClick={event => { event.preventDefault(); setStep(2); }} className="min-h-11 shrink-0 rounded-xl">{photos.length ? (el ? 'Συνέχεια' : 'Continue') : (el ? 'Χωρίς φωτογραφία' : 'Skip photos')}<ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" /></Button></> : <><Button type="button" variant="ghost" disabled={isSubmitting || !!savedListingId} onClick={() => { setStep(1); requestAnimationFrame(() => photosSection.current?.focus()); }} className="min-h-11 rounded-xl"><ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />{el ? 'Πίσω' : 'Photos'}{photos.length > 0 && ` (${photos.length})`}</Button><Button key="publish-listing" type="submit" disabled={isSubmitting || isAnalyzing || isLocating || !!savedListingId} className="min-h-11 rounded-xl">{isSubmitting && <Loader2 aria-hidden="true" className="mr-2 h-4 w-4 animate-spin" />}{isSubmitting ? (el ? 'Δημοσίευση…' : 'Publishing…') : (el ? 'Δημοσίευση' : 'Publish listing')}</Button></>}
         </div>
       </form>
+      </>}
     </DialogContent>
   </Dialog>;
 }

@@ -26,18 +26,19 @@ const subcategories: Record<string, string[]> = {
   Services: ['I want', 'I will', 'I can'],
 };
 
-function ListingCard({ listing }: { listing: SearchListing }) {
+function ListingCard({ listing, index }: { listing: SearchListing; index: number }) {
   const { t, locale } = useI18n();
   const [failedImage, setFailedImage] = useState<string | null>(null);
   const imageUrl = listing.listing_images?.find(image => image.main)?.url || listing.listing_images?.[0]?.url;
   const safeImage = imageUrl && (/^https?:\/\//i.test(imageUrl) || (imageUrl.startsWith('/') && !imageUrl.startsWith('//'))) && imageUrl !== failedImage ? imageUrl : null;
   const address = typeof listing.address === 'string' ? listing.address : listing.address?.label;
+  const priceNeedsConfirmation = listingPriceNeedsConfirmation(listing.price, listing.description, listing.main_category, listing.sub_category);
   const categories: Record<string, string> = {
     Items: t('searchModern.items', 'Items'), Services: t('searchModern.services', 'Services'),
     Sell: t('searchModern.sell', 'Sell'), Buy: t('searchModern.buy', 'Buy'), Free: t('searchModern.free', 'Free'),
     'I want': t('searchModern.want', 'I want'), 'I will': t('searchModern.will', 'I will'), 'I can': t('searchModern.can', 'I can'),
   };
-  return <Link href={`/listings/${encodeURIComponent(listing.id)}`} className="needs-search-result-card group min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+  return <Link href={`/listings/${encodeURIComponent(listing.id)}`} style={{ animationDelay: `${Math.min(index, 4) * 30}ms` }} className="needs-search-result-card needs-result-arrival group min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
     <div className="needs-search-result-media flex items-center justify-center">
       {safeImage
         // Stored listing images are served directly from their public storage URL.
@@ -46,13 +47,13 @@ function ListingCard({ listing }: { listing: SearchListing }) {
         : <div className="flex flex-col items-center gap-2 px-2 text-center text-muted-foreground"><Package className="h-7 w-7 stroke-[1.25]" aria-hidden="true" /><span className="text-xs">{t('searchModern.noPhoto', 'No photo added')}</span></div>}
     </div>
     <div className="needs-search-result-body">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><span>{categories[listing.main_category] || listing.main_category}</span><span className="rounded-full bg-muted px-2 py-1">{categories[listing.sub_category] || listing.sub_category}</span></div>
-      <h3 className="line-clamp-2 break-words text-base font-semibold leading-snug group-hover:text-primary">{listing.title}</h3>
-      <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">{listing.description}</p>
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-1">
-        {address && <span className="inline-flex min-w-0 max-w-full items-center gap-1 text-xs text-muted-foreground"><MapPin className="h-3 w-3 shrink-0" aria-hidden="true" /><span className="truncate">{address}</span></span>}
-        {typeof listing.price === 'number' && <span className="ml-auto shrink-0 text-base font-semibold text-primary">{listing.price === 0 && !listingPriceNeedsConfirmation(listing.price, listing.description, listing.main_category, listing.sub_category) ? t('searchModern.free', 'Free') : formatPublishedListingPrice(listing.price, listing.description, locale, listing.main_category, listing.sub_category)}</span>}
+      <h3 className="line-clamp-2 group-hover:text-primary">{listing.title}</h3>
+      {typeof listing.price === 'number' && <span className={`needs-search-result-price${priceNeedsConfirmation ? ' needs-search-result-price--confirmation' : ''}`}>{listing.price === 0 && !priceNeedsConfirmation ? t('searchModern.free', 'Free') : formatPublishedListingPrice(listing.price, listing.description, locale, listing.main_category, listing.sub_category)}</span>}
+      <div className="needs-search-result-category">
+        <span>{categories[listing.main_category] || listing.main_category}</span><span aria-hidden="true">·</span><span>{categories[listing.sub_category] || listing.sub_category}</span>
       </div>
+      <p className="needs-search-result-description line-clamp-2">{listing.description}</p>
+      {address && <span className="needs-search-result-location"><MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span className="line-clamp-2">{address}</span></span>}
     </div>
   </Link>;
 }
@@ -95,7 +96,7 @@ export function SearchResults({ query, radiusMeters, fixedCategory }: SearchResu
           <p role="status" className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-muted-foreground">{t('searchModern.emptyDescription', 'No listings match your search. Try fewer keywords, remove a tag or widen the distance.')}</p>
           <Button variant="outline" className="mt-6 h-12 rounded-xl" onClick={() => state.reset()}>{t('searchModern.clearFilters', 'Clear search and filters')}</Button>
         </div>
-        : <div className="space-y-3">{results.map(listing => <ListingCard key={listing.id} listing={listing} />)}</div>}
+        : <div className="needs-search-result-list">{results.map((listing, index) => <ListingCard key={listing.id} listing={listing} index={index} />)}</div>}
 
       {!isLoading && !error && data && (data.pagination.totalPages > 1 || state.page.value > 1) && <nav aria-label={t('searchModern.pagination', 'Search result pages')} className="needs-search-pagination">
         <Button variant="outline" className="h-11 rounded-xl" disabled={state.page.value <= 1} onClick={() => state.page.set(Math.min(state.page.value - 1, data.pagination.totalPages || 1))}><ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />{t('common.previous', 'Previous')}</Button>

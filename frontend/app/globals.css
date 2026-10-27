@@ -1,6 +1,42 @@
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
+/* Short, consistent feedback. Motion never delays an action or blocks input. */
+:root {
+  --needs-motion-fast: 140ms;
+  --needs-motion-enter: 220ms;
+  --needs-motion-ease: cubic-bezier(.2, .8, .2, 1);
+}
+.needs-button {
+  transition: color var(--needs-motion-fast), background-color var(--needs-motion-fast),
+    border-color var(--needs-motion-fast), box-shadow var(--needs-motion-fast),
+    scale var(--needs-motion-fast) var(--needs-motion-ease);
+}
+.needs-search-result-media img { transition: transform var(--needs-motion-enter) var(--needs-motion-ease); }
+.needs-search-result-card { transition: background-color var(--needs-motion-fast), translate var(--needs-motion-fast) var(--needs-motion-ease); }
+.needs-hero-categories a, .needs-icon-button, .needs-latest-list a {
+  transition: background-color var(--needs-motion-fast), color var(--needs-motion-fast),
+    border-color var(--needs-motion-fast), scale var(--needs-motion-fast) var(--needs-motion-ease);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .needs-button:not(:disabled):not([aria-disabled="true"]):active,
+  .needs-icon-button:not(:disabled):active,
+  .needs-hero-categories a:active,
+  .needs-search-categories > *:active,
+  .needs-search-filter-toggle:active { scale: .98; }
+  .needs-search-categories > *, .needs-search-filter-toggle { transition: background-color var(--needs-motion-fast), color var(--needs-motion-fast), border-color var(--needs-motion-fast), scale var(--needs-motion-fast); }
+  .needs-result-arrival { animation: needs-content-arrive var(--needs-motion-enter) var(--needs-motion-ease) backwards; }
+  .needs-search-filter-panel { animation: needs-content-arrive var(--needs-motion-enter) var(--needs-motion-ease); }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .needs-search-result-card:hover { translate: 0 -2px; }
+  .needs-search-result-card:hover .needs-search-result-media img { transform: scale(1.035); }
+}
+@keyframes needs-content-arrive {
+  from { opacity: .35; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* Keep the established container geometry with Tailwind 4's utility API. */
 @utility container {
   margin-inline: auto;
@@ -212,14 +248,20 @@
 .needs-search-empty h3 { font-size: 1.15rem; line-height: 1.45; font-weight: 650; letter-spacing: -.02em; }
 .needs-search-empty p { max-width: 290px; font-size: .875rem; line-height: 1.65; color: hsl(var(--muted-foreground)); }
 .needs-search-empty button, .needs-search-pagination button { border-radius: 999px; }
-.needs-search-result-card { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 16px; padding-block: 20px; border-bottom: 1px solid hsl(var(--border)); }
+.needs-search-result-list { border-top: 1px solid hsl(var(--border) / .8); }
+.needs-search-result-card { display: grid; grid-template-columns: 128px minmax(0, 1fr); align-items: start; gap: 18px; padding-block: 22px; border-bottom: 1px solid hsl(var(--border) / .8); }
 .needs-search-result-card:last-child { border-bottom: 0; }
-.needs-search-result-media { position: relative; min-height: 116px; height: 100%; max-height: 140px; overflow: hidden; border-radius: 14px; background: hsl(var(--muted)); }
+.needs-search-result-media { position: relative; width: 100%; aspect-ratio: 1; overflow: hidden; border-radius: 16px; background: hsl(var(--muted)); }
 .needs-search-result-media img { width: 100%; height: 100%; object-fit: cover; }
-.needs-search-result-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.needs-search-result-body h3 { font-size: .95rem; line-height: 1.4; font-weight: 650; }
+.needs-search-result-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.needs-search-result-body h3 { font-size: 1.0625rem; line-height: 1.4; font-weight: 650; letter-spacing: -.015em; }
 .needs-search-result-card:hover h3 { color: hsl(var(--primary)); }
-.needs-search-result-body p { font-size: .8rem; line-height: 1.5; color: hsl(var(--muted-foreground)); }
+.needs-search-result-price { min-width: 0; font-size: 1.125rem; line-height: 1.35; font-weight: 650; letter-spacing: -.015em; color: hsl(var(--primary)); }
+.needs-search-result-price--confirmation { font-size: .8125rem; line-height: 1.5; letter-spacing: 0; }
+.needs-search-result-category { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; font-size: .8125rem; line-height: 1.5; color: hsl(var(--muted-foreground)); }
+.needs-search-result-description { margin-top: 2px; font-size: .875rem; line-height: 1.55; color: hsl(var(--muted-foreground)); }
+.needs-search-result-location { display: flex; align-items: flex-start; gap: 5px; min-width: 0; padding-top: 5px; font-size: .75rem; line-height: 1.5; color: hsl(var(--muted-foreground)); }
+.needs-search-result-location > svg { margin-top: 2px; }
 .needs-search-pagination { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; margin-top: 20px; padding-top: 20px; border-top: 1px solid hsl(var(--border)); }
 @media (width < 1024px) {
   .needs-search-workspace { grid-template-columns: minmax(0, 1fr); }
@@ -239,6 +281,11 @@
   .needs-search-filter-panel, .needs-search-list { padding: 18px; }
   .needs-search-map-panel { height: 340px; padding: 12px; gap: 10px; }
   .needs-search-map-heading { flex-wrap: wrap; }
+  .needs-search-result-card { grid-template-columns: 96px minmax(0, 1fr); gap: 14px; padding-block: 20px; }
+  .needs-search-result-body h3 { font-size: 1rem; }
+  .needs-search-result-description { font-size: .8125rem; }
+}
+@media (width < 360px) {
   .needs-search-result-card { grid-template-columns: 88px minmax(0, 1fr); gap: 12px; }
 }
 /* The Athens hero retains the original photograph with one glass message at a time. */

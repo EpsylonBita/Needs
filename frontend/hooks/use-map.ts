@@ -37,6 +37,7 @@ export function useMap() {
       center: options.center,
       zoom: options.zoom,
       accessToken: process.env.NEXT_PUBLIC_MAPBOX_TOKEN,
+      performanceMetricsCollection: false,
     });
     instance.current = newMap;
     appliedStyle.current = latestStyle.current;

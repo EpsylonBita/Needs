@@ -9,6 +9,7 @@ import "@/app/globals.css";
 import { CriticalErrorBoundary } from "@/components/common/error-boundary";
 import { Footer } from "@/components/layout/footer";
 import { Navbar } from "@/components/layout/navbar";
+import { PageMotion } from "@/components/layout/page-motion";
 import { SkipLink } from "@/components/layout/skip-link";
 import { Toaster } from "@/components/ui/toaster";
 import { ContextProviders } from "@/contexts/providers";
@@ -38,7 +39,7 @@ export default async function RootLayout({
               <SkipLink />
               <div className="flex min-h-screen flex-col">
                 <Navbar />
-                <main id="main-content" tabIndex={-1} className="relative flex-grow">{children}</main>
+                <PageMotion>{children}</PageMotion>
                 <Footer />
                 <Toaster />
                 <SonnerToaster />

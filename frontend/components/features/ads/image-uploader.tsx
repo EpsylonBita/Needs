@@ -27,9 +27,9 @@ export function ImageUploader({ imagePreviews, onRemove, onChange, disabled = fa
   const cannotAdd = disabled || atLimit;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {imagePreviews.length > 0 ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2 min-[360px]:grid-cols-3">
           {imagePreviews.map((preview, index) => (
             <div key={`${preview}-${index}`} className="relative aspect-square overflow-hidden rounded-2xl border border-border bg-muted motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
               <Image
@@ -37,7 +37,7 @@ export function ImageUploader({ imagePreviews, onRemove, onChange, disabled = fa
                 alt={isGreek ? `Φωτογραφία αγγελίας ${index + 1}` : `Listing photo ${index + 1}`}
                 fill
                 unoptimized
-                sizes="(max-width: 640px) 45vw, 180px"
+                sizes="(max-width: 359px) 42vw, (max-width: 639px) 28vw, 180px"
                 className="object-cover"
               />
               {index === 0 && (
@@ -58,21 +58,23 @@ export function ImageUploader({ imagePreviews, onRemove, onChange, disabled = fa
           ))}
         </div>
       ) : (
-        <div className="flex flex-col items-center rounded-2xl border border-dashed border-primary/30 bg-primary/5 px-4 py-8 text-center">
-          <span className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-background text-primary shadow-sm">
-            <Camera className="h-7 w-7" aria-hidden="true" />
+        <div className="flex items-start gap-3 rounded-2xl border border-border bg-muted/25 p-4">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Camera className="h-5 w-5" aria-hidden="true" />
           </span>
-          <p className="font-semibold text-foreground">{isGreek ? 'Δείξε τι θέλεις να ανεβάσεις' : 'Show what you want to list'}</p>
-          <p className="mt-1 max-w-xs text-sm text-muted-foreground">{isGreek ? 'Μια φωτογραφία βοηθά. Μπορείς να συνεχίσεις και χωρίς αυτή.' : 'A photo helps. You can also continue without one.'}</p>
+          <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">{isGreek ? 'Δείξε τι θέλεις να ανεβάσεις' : 'Show what you want to list'}</p>
+          <p className="mt-1 text-sm leading-5 text-muted-foreground">{isGreek ? 'Μια φωτογραφία βοηθά. Μπορείς να συνεχίσεις και χωρίς αυτή.' : 'A photo helps. You can also continue without one.'}</p>
+          </div>
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-2 min-[480px]:grid-cols-2">
-        <Button type="button" disabled={cannotAdd} onClick={() => cameraInput.current?.click()} aria-describedby={`${id}-photo-help`} className="w-full motion-safe:transition-transform motion-safe:active:scale-[0.98] motion-reduce:transition-none">
+        <Button type="button" variant="outline" disabled={cannotAdd} onClick={() => cameraInput.current?.click()} aria-describedby={`${id}-photo-help`} className="min-h-11 w-full rounded-xl">
           <Camera className="h-4 w-4" aria-hidden="true" />
           {isGreek ? 'Βγάλε φωτογραφία' : 'Take a photo'}
         </Button>
-        <Button type="button" variant="outline" disabled={cannotAdd} onClick={() => galleryInput.current?.click()} aria-describedby={`${id}-photo-help`} className="w-full motion-safe:transition-transform motion-safe:active:scale-[0.98] motion-reduce:transition-none">
+        <Button type="button" disabled={cannotAdd} onClick={() => galleryInput.current?.click()} aria-describedby={`${id}-photo-help`} className="min-h-11 w-full rounded-xl">
           <ImagePlus className="h-4 w-4" aria-hidden="true" />
           {isGreek ? 'Επίλεξε φωτογραφίες' : 'Choose photos'}
         </Button>
@@ -81,11 +83,11 @@ export function ImageUploader({ imagePreviews, onRemove, onChange, disabled = fa
       <input ref={cameraInput} id={`${id}-camera`} type="file" hidden accept={ACCEPTED_IMAGES} capture="environment" disabled={cannotAdd} onChange={onChange} aria-label={isGreek ? 'Φωτογραφία από κάμερα' : 'Camera photo'} />
       <input ref={galleryInput} id={`${id}-gallery`} type="file" hidden accept={ACCEPTED_IMAGES} multiple disabled={cannotAdd} onChange={onChange} aria-label={isGreek ? 'Φωτογραφίες από συσκευή' : 'Photos from device'} />
 
-      <div id={`${id}-photo-help`} className="space-y-1 text-center text-xs text-muted-foreground">
+      <div id={`${id}-photo-help`} className="space-y-1 text-xs leading-5 text-muted-foreground">
         <p>{isGreek ? 'Έως 6 φωτογραφίες · JPG, PNG, WebP ή GIF · έως 5 MB η καθεμία' : 'Up to 6 photos · JPG, PNG, WebP or GIF · up to 5 MB each'}</p>
         <p>{isGreek ? 'Στο κινητό, η λήψη ανοίγει την κάμερα όπου υποστηρίζεται.' : 'On mobile, photo capture opens the camera where supported.'}</p>
       </div>
-      <p role="status" className="text-center text-sm text-muted-foreground">
+      <p role="status" className="text-sm text-muted-foreground empty:hidden">
         {atLimit
           ? isGreek ? 'Έφτασες τις 6 φωτογραφίες. Αφαίρεσε μία για να προσθέσεις άλλη.' : 'You have 6 photos. Remove one to add another.'
           : imagePreviews.length > 0 ? isGreek ? `${imagePreviews.length} από 6 φωτογραφίες` : `${imagePreviews.length} of 6 photos` : ''}

@@ -26,7 +26,7 @@ jobs:
       - run: npm run test:ci
       - run: npm run test:db
       - run: npm run test:scripts
-      - run: npm audit --omit=dev --audit-level=moderate
+      - run: npm audit --audit-level=moderate
   production-browser:
     runs-on: ubuntu-latest
     timeout-minutes: 20

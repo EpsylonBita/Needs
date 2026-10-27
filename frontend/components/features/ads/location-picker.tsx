@@ -95,8 +95,8 @@ export function LocationPicker({ locationName, showMap, coordinates, isLocating,
 
   return (
     <div>
-      <Label htmlFor="location" className="text-base font-semibold text-primary">{copy.label}</Label>
-      <div className="mt-2 space-y-2">
+      <Label htmlFor="location" className="text-sm font-medium text-foreground">{copy.label}</Label>
+      <div className="mt-1.5 space-y-1.5">
         <div className="relative">
           <Input
             id="location" role="combobox" autoComplete="off" spellCheck={false} maxLength={256}
@@ -123,14 +123,14 @@ export function LocationPicker({ locationName, showMap, coordinates, isLocating,
               }
             }}
             placeholder={copy.placeholder}
-            className="h-12 pr-28 bg-card text-card-foreground border-0 ring-1 ring-border focus:ring-2 focus:ring-blue-500 focus:border-0 placeholder:text-muted-foreground focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] dark:focus:shadow-[0_0_0_4px_rgba(59,130,246,0.1)] transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="h-11 rounded-xl border border-input bg-background pr-24 text-base shadow-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
-          <div className="absolute right-0.5 top-0.5 flex items-center gap-1">
-            <Button type="button" variant="ghost" size="sm" aria-expanded={showMap} aria-controls="listing-location-map-panel" className="h-11 w-11 p-0 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20" onClick={onToggleMap}>
+          <div className="absolute right-px top-0 flex items-center">
+            <Button type="button" variant="ghost" size="sm" aria-expanded={showMap} aria-controls="listing-location-map-panel" className="h-11 w-11 rounded-xl p-0 text-primary hover:bg-primary/5 hover:text-primary" onClick={onToggleMap}>
               <MapPin className="h-4 w-4" aria-hidden="true" />
               <span className="sr-only">{t('ad.location.toggleMap','Toggle map')}</span>
             </Button>
-            <Button type="button" variant="ghost" size="sm" className="h-11 w-11 p-0 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20" onClick={onUseCurrentLocation} disabled={isLocating}>
+            <Button type="button" variant="ghost" size="sm" className="h-11 w-11 rounded-xl p-0 text-primary hover:bg-primary/5 hover:text-primary" onClick={onUseCurrentLocation} disabled={isLocating}>
               {isLocating ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Crosshair className="h-4 w-4" aria-hidden="true" />}
               <span className="sr-only">{t('ad.location.useCurrent','Use current location')}</span>
             </Button>
@@ -150,7 +150,7 @@ export function LocationPicker({ locationName, showMap, coordinates, isLocating,
         {visible && <p role="status" aria-live="polite" className="text-xs leading-relaxed text-muted-foreground">
           {search.status === 'loading' ? copy.loading : search.status === 'error' ? copy.error : search.status === 'ready' ? suggestions.length ? `${suggestions.length} ${copy.count}` : copy.empty : ''}
         </p>}
-        <div id="listing-location-map-panel" hidden={!showMap} className="relative mt-2 rounded-lg overflow-hidden h-[200px] ring-1 ring-border">
+        <div id="listing-location-map-panel" hidden={!showMap} className="relative mt-2 h-[200px] overflow-hidden rounded-xl border border-border">
           <div id="location-map" className="w-full h-full" />
           {coordinates && <div className="absolute bottom-2 left-2 right-2 bg-card/95 text-card-foreground p-2 text-xs rounded-md backdrop-blur-sm">
             <p className="font-medium text-foreground">{t('ad.location.selected','Selected location:')} {locationName}</p>

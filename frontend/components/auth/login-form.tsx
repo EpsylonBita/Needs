@@ -41,7 +41,8 @@ export function LoginForm({ onClose, onAuthenticated, onBusyChange }: LoginFormP
     onBusyChange?.(true);
     try {
       await login(data);
-      toast({ title: t('auth.login.success.title', 'Login successful'), description: t('auth.login.success.desc', 'You have been logged in successfully.') });
+      // The next workflow provides confirmation without a toast obscuring its controls.
+      if (!onAuthenticated) toast({ title: t('auth.login.success.title', 'Login successful'), description: t('auth.login.success.desc', 'You have been logged in successfully.') });
       window.dispatchEvent(new CustomEvent('auth:login-success', { detail: { email: data.email } }));
       (onAuthenticated ?? onClose)();
     } catch (failure) {

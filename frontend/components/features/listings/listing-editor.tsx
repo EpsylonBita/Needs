@@ -242,7 +242,7 @@ function ListingLocationMap({ point, onSelect, disabled, unavailable }: { point:
     let active = true
     const fail = () => { if (active) setFailed(true) }
     try {
-      const instance = new mapboxgl.Map({ container: container.current, accessToken: token, style, center: current.current.point || [23.7275, 37.9838], zoom: 12 })
+      const instance = new mapboxgl.Map({ container: container.current, accessToken: token, style, center: current.current.point || [23.7275, 37.9838], zoom: 12, performanceMetricsCollection: false })
       const pin = new mapboxgl.Marker({ draggable: !current.current.disabled })
       map.current = instance; marker.current = pin
       if (current.current.point) pin.setLngLat(current.current.point).addTo(instance)
