@@ -100,6 +100,9 @@ before(async () => {
   await db.exec(await read('migrations/20261027104647_escrow_dispute_canonical_corrections.sql'))
   await db.exec(await read('migrations/20261027105222_escrow_admin_approved_recovery.sql'))
   await db.exec(await read('migrations/20261027111542_escrow_recovery_settlement_currency.sql'))
+  await db.exec(await read('migrations/20261027113829_payment_transaction_currencies.sql'))
+  await db.exec(await read('migrations/20261027145521_escrow_capture_webhook_claim_resolution.sql'))
+  await db.exec(await read('migrations/20261027145611_preserve_financial_review_attention.sql'))
 })
 after(async () => { await db.close() })
 
@@ -208,6 +211,74 @@ test('refund reservation and recovery approval exclude one another under the pay
   other.disputeId = 'du_refundRace'
   await rpc('reconcile_order_disputes($1,$2,$3,$4::jsonb)', [other.id, other.intent, observed(), JSON.stringify([{ id: other.disputeId, amount: 4000, currency: 'eur', status: 'lost' }])])
   await assert.rejects(approve(other), /Refund or settlement/)
+})
+
+const capturedWebhook = (p, changes = {}, eventId = `evt_${randomUUID()}`) => rpc('process_stripe_webhook_event($1::jsonb,$2,$3)', [JSON.stringify({
+  id: eventId, type: 'payment_intent.succeeded', created: Math.floor(Date.now() / 1000), data: { object: {
+    id: p.intent, status: 'succeeded', capture_method: 'manual', amount: 4000, amount_received: 4000,
+    amount_capturable: 0, application_fee_amount: 200, currency: 'eur',
+    metadata: { listing_id: p.listing, buyer_profile_id: p.buyer, seller_profile_id: p.seller }, ...changes,
+  } },
+}), p.intent, null])
+
+test('actual capture claim followed only by the success webhook permits refund and lost-dispute recovery', async () => {
+  for (const milestone of [false, true]) {
+    for (const next of ['refund', 'recovery']) {
+      const p = await fixed({ milestone }); await both(p)
+      const claim = await capture(p)
+      await rpc('resolve_order_capture($1,$2,$3)', [p.id, claim.claim_id, 'captured'])
+      assert.equal((await getPayment(p.id)).capture_claim_id, claim.claim_id, 'HTTP capture acknowledgment alone cannot release the reservation')
+      const eventId = `evt_${randomUUID()}`
+      await capturedWebhook(p, {}, eventId)
+      assert.equal((await getPayment(p.id)).status, 'completed')
+      assert.equal((await getPayment(p.id)).capture_claim_id, null)
+      assert.equal((await getPayment(p.id)).capture_claimed_at, null)
+      await rpc('resolve_order_capture($1,$2,$3)', [p.id, claim.claim_id, 'captured'])
+      assert.equal((await capturedWebhook(p, {}, eventId)).duplicate, true)
+      assert.equal(await count("select count(*) n from transactions where payment_id=$1 and type='charge' and status='succeeded'", [p.id]), 1)
+      if (next === 'refund') {
+        await complaint(p)
+        assert.ok(await rpc('reserve_admin_payment_refund($1,$2)', [p.id, users[2]]))
+      } else {
+        p.disputeId = `du_${randomUUID().replaceAll('-', '')}`
+        await rpc('reconcile_order_disputes($1,$2,$3,$4::jsonb)', [p.id, p.intent, observed(), JSON.stringify([{ id: p.disputeId, amount: 4000, currency: 'eur', status: 'lost' }])])
+        assert.equal((await approve(p)).status, 'pending')
+      }
+    }
+  }
+})
+
+test('mismatched success evidence cannot complete a payment, clear its capture claim or consume the webhook', async () => {
+  const variants = [
+    { id: 'pi_other' }, { status: 'requires_capture' }, { capture_method: 'automatic' },
+    { amount: 3999 }, { amount_received: 3999 }, { application_fee_amount: 199 }, { currency: 'usd' },
+    { metadata: {} }, { metadata: { listing_id: randomUUID(), buyer_profile_id: randomUUID(), seller_profile_id: randomUUID() } },
+  ]
+  for (const change of variants) {
+    const p = await fixed({ milestone: true }); await both(p); const claim = await capture(p)
+    const eventId = `evt_${randomUUID()}`
+    await assert.rejects(capturedWebhook(p, change, eventId), /capture evidence/)
+    const unchanged = await getPayment(p.id)
+    assert.equal(unchanged.status, 'requires_capture'); assert.equal(unchanged.capture_claim_id, claim.claim_id)
+    assert.equal(await count('select count(*) n from webhook_events where id=$1', [eventId]), 0)
+    assert.equal(await count('select count(*) n from transactions where payment_id=$1', [p.id]), 0)
+  }
+})
+
+test('a verified duplicate success repairs historical terminal capture claims without changing financial history', async () => {
+  for (const status of ['completed', 'refunded', 'disputed']) {
+    const p = await fixed({ milestone: true }); await both(p); const claim = await capture(p)
+    const eventId = `evt_${randomUUID()}`
+    await capturedWebhook(p, {}, eventId)
+    if (status === 'refunded') await refunds(p, [refund(`re_${randomUUID().replaceAll('-', '')}`, 'succeeded')])
+    if (status === 'disputed') await rpc('reconcile_order_disputes($1,$2,$3,$4::jsonb)', [p.id, p.intent, observed(), JSON.stringify([{ id: `du_${randomUUID().replaceAll('-', '')}`, amount: 4000, currency: 'eur', status: 'needs_response' }])])
+    await db.query('update payments set capture_claim_id=$2,capture_claimed_at=now() where id=$1', [p.id, claim.claim_id])
+    const beforeCount = await count('select count(*) n from transactions where payment_id=$1', [p.id])
+    assert.equal((await capturedWebhook(p, {}, eventId)).duplicate, true)
+    const row = await getPayment(p.id)
+    assert.equal(row.status, status); assert.equal(row.capture_claim_id, null); assert.equal(row.capture_claimed_at, null)
+    assert.equal(await count('select count(*) n from transactions where payment_id=$1', [p.id]), beforeCount)
+  }
 })
 test('completed recovery records one separate ledger entry and never a customer refund', async () => {
   const p = await recoverable(), claim = await approve(p), reversal = `trr_${p.id.replaceAll('-', '')}`

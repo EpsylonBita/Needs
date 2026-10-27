@@ -1,0 +1,193 @@
+{
+  "run": "needs-recovery-edgecases-157e24ad-76b1-4eb8-9b72-612c4befa5a8",
+  "beganAt": "2026-10-27T15:01:55.269Z",
+  "finishedAt": "2026-10-27T15:02:45.926Z",
+  "platform": "acct_1UUqkiLEgZ0a06x6",
+  "connectedAccount": "acct_1UUyVUL5kmhcKzLl",
+  "origin": "http://localhost:3003",
+  "options": {
+    "allowTestPayments": true
+  },
+  "checks": [
+    {
+      "name": "actual Stripe sandbox capture and terminal lost chargeback",
+      "intentId": "pi_3UVBswLEgZ0a06x60NVu2BYa",
+      "disputeId": "du_1UVBt3LEgZ0a06x67DxMYWgR",
+      "providerStatus": "lost"
+    },
+    {
+      "name": "simulated insufficient seller balance retains one pending approval without a Stripe reversal",
+      "evidenceKind": "controlled provider-error simulation on real Stripe objects",
+      "recoveryId": "7975128b-abc0-461f-ac2f-69f7d63581ca"
+    },
+    {
+      "name": "actual accepted Stripe reversal with locally lost response and failed verification read stays pending",
+      "evidenceKind": "real Stripe reversal; controlled network failure",
+      "recoveryId": "7975128b-abc0-461f-ac2f-69f7d63581ca",
+      "reversalId": "trr_1UVBtLLEgZ0a06x6FddsBZOX"
+    },
+    {
+      "name": "one bounded worker reconciles the accepted reversal exactly once with the original approval",
+      "recoveryId": "7975128b-abc0-461f-ac2f-69f7d63581ca",
+      "reversalId": "trr_1UVBtLLEgZ0a06x6FddsBZOX",
+      "feeRefundId": "fr_1UVBtLL5kmhcKzLlYAzBWEuA",
+      "ledgerCount": 1
+    },
+    {
+      "name": "simulated late bank win preserves actual recovery ledger and requires attention without another money movement",
+      "evidenceKind": "controlled canonical-response simulation; actual Stripe dispute remains lost",
+      "paymentStatus": "completed",
+      "participantNotifications": 2,
+      "recoveryLedgerCount": 1
+    }
+  ],
+  "workerBatches": [
+    {
+      "claimed": 1,
+      "completed": 1,
+      "failed": 0
+    },
+    {
+      "claimed": 1,
+      "completed": 1,
+      "failed": 0
+    },
+    {
+      "claimed": 1,
+      "completed": 1,
+      "failed": 0
+    }
+  ],
+  "faultEvidence": [
+    {
+      "mode": "insufficient_balance",
+      "nonce": "fab7209c-a2f3-49a4-a04d-d107c3892e63",
+      "entries": [
+        {
+          "at": "2026-10-27T15:02:18.701Z",
+          "run": "needs-recovery-edgecases-157e24ad-76b1-4eb8-9b72-612c4befa5a8",
+          "nonce": "fab7209c-a2f3-49a4-a04d-d107c3892e63",
+          "mode": "insufficient_balance",
+          "event": "simulated_balance_insufficient",
+          "intentId": "pi_3UVBswLEgZ0a06x60NVu2BYa",
+          "transferId": "tr_3UVBswLEgZ0a06x60XeyN5Xo",
+          "disputeId": "du_1UVBt3LEgZ0a06x67DxMYWgR",
+          "paymentId": "4e3a3688-5eba-476f-acd1-08d482236946",
+          "recoveryId": "7975128b-abc0-461f-ac2f-69f7d63581ca",
+          "idempotencyHash": "51f11abec3367840307761e316bb614cc6e3f37b29e41c9c640803abcc2def79",
+          "providerWriteForwarded": false
+        }
+      ]
+    },
+    {
+      "mode": "drop_reversal_response",
+      "nonce": "ef984f4d-bb59-4f13-a6ad-5088c1afbb74",
+      "entries": [
+        {
+          "at": "2026-10-27T15:02:23.797Z",
+          "run": "needs-recovery-edgecases-157e24ad-76b1-4eb8-9b72-612c4befa5a8",
+          "nonce": "ef984f4d-bb59-4f13-a6ad-5088c1afbb74",
+          "mode": "drop_reversal_response",
+          "event": "actual_reversal_response_dropped",
+          "intentId": "pi_3UVBswLEgZ0a06x60NVu2BYa",
+          "transferId": "tr_3UVBswLEgZ0a06x60XeyN5Xo",
+          "disputeId": "du_1UVBt3LEgZ0a06x67DxMYWgR",
+          "paymentId": "4e3a3688-5eba-476f-acd1-08d482236946",
+          "recoveryId": "7975128b-abc0-461f-ac2f-69f7d63581ca",
+          "idempotencyHash": "51f11abec3367840307761e316bb614cc6e3f37b29e41c9c640803abcc2def79",
+          "status": 200,
+          "reversal": {
+            "id": "trr_1UVBtLLEgZ0a06x6FddsBZOX",
+            "amount": 223,
+            "currency": "usd",
+            "transfer": "tr_3UVBswLEgZ0a06x60XeyN5Xo"
+          },
+          "originalSha256": "34ff73a2996644ad0fd353c8b4feaac12a4594a2a7eb9c220f525d7ec9d60f8a",
+          "providerWriteForwarded": true
+        },
+        {
+          "at": "2026-10-27T15:02:23.798Z",
+          "run": "needs-recovery-edgecases-157e24ad-76b1-4eb8-9b72-612c4befa5a8",
+          "nonce": "ef984f4d-bb59-4f13-a6ad-5088c1afbb74",
+          "mode": "drop_reversal_response",
+          "event": "accepted_reversal_timeout",
+          "intentId": "pi_3UVBswLEgZ0a06x60NVu2BYa",
+          "transferId": "tr_3UVBswLEgZ0a06x60XeyN5Xo",
+          "disputeId": "du_1UVBt3LEgZ0a06x67DxMYWgR",
+          "paymentId": "4e3a3688-5eba-476f-acd1-08d482236946"
+        },
+        {
+          "at": "2026-10-27T15:02:23.803Z",
+          "run": "needs-recovery-edgecases-157e24ad-76b1-4eb8-9b72-612c4befa5a8",
+          "nonce": "ef984f4d-bb59-4f13-a6ad-5088c1afbb74",
+          "mode": "drop_reversal_response",
+          "event": "post_reversal_intent_read_interrupted",
+          "intentId": "pi_3UVBswLEgZ0a06x60NVu2BYa",
+          "transferId": "tr_3UVBswLEgZ0a06x60XeyN5Xo",
+          "disputeId": "du_1UVBt3LEgZ0a06x67DxMYWgR",
+          "paymentId": "4e3a3688-5eba-476f-acd1-08d482236946"
+        }
+      ]
+    },
+    {
+      "mode": "late_bank_win",
+      "nonce": "4ad18113-548f-479f-b5c0-34702eb3e8eb",
+      "entries": [
+        {
+          "at": "2026-10-27T15:02:32.128Z",
+          "run": "needs-recovery-edgecases-157e24ad-76b1-4eb8-9b72-612c4befa5a8",
+          "nonce": "4ad18113-548f-479f-b5c0-34702eb3e8eb",
+          "mode": "late_bank_win",
+          "event": "simulated_late_bank_win",
+          "intentId": "pi_3UVBswLEgZ0a06x60NVu2BYa",
+          "transferId": "tr_3UVBswLEgZ0a06x60XeyN5Xo",
+          "disputeId": "du_1UVBt3LEgZ0a06x67DxMYWgR",
+          "paymentId": "4e3a3688-5eba-476f-acd1-08d482236946",
+          "original": {
+            "id": "du_1UVBt3LEgZ0a06x67DxMYWgR",
+            "status": "lost",
+            "amount": 200,
+            "currency": "eur",
+            "paymentIntent": "pi_3UVBswLEgZ0a06x60NVu2BYa",
+            "charge": "ch_3UVBswLEgZ0a06x600m85TJ2"
+          },
+          "originalSha256": "7291736bec96efc986b7c45b189922d55f91ff2e2acfe196d54603c307a98129",
+          "simulatedStatus": "won",
+          "verifiedReversalId": "trr_1UVBtLLEgZ0a06x6FddsBZOX",
+          "providerWriteForwarded": false
+        },
+        {
+          "at": "2026-10-27T15:02:34.374Z",
+          "run": "needs-recovery-edgecases-157e24ad-76b1-4eb8-9b72-612c4befa5a8",
+          "nonce": "4ad18113-548f-479f-b5c0-34702eb3e8eb",
+          "mode": "late_bank_win",
+          "event": "simulated_late_bank_win",
+          "intentId": "pi_3UVBswLEgZ0a06x60NVu2BYa",
+          "transferId": "tr_3UVBswLEgZ0a06x60XeyN5Xo",
+          "disputeId": "du_1UVBt3LEgZ0a06x67DxMYWgR",
+          "paymentId": "4e3a3688-5eba-476f-acd1-08d482236946",
+          "original": {
+            "id": "du_1UVBt3LEgZ0a06x67DxMYWgR",
+            "status": "lost",
+            "amount": 200,
+            "currency": "eur",
+            "paymentIntent": "pi_3UVBswLEgZ0a06x60NVu2BYa",
+            "charge": "ch_3UVBswLEgZ0a06x600m85TJ2"
+          },
+          "originalSha256": "7291736bec96efc986b7c45b189922d55f91ff2e2acfe196d54603c307a98129",
+          "simulatedStatus": "won",
+          "verifiedReversalId": "trr_1UVBtLLEgZ0a06x6FddsBZOX",
+          "providerWriteForwarded": false
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Insufficient seller balance is a controlled pre-forward provider-error simulation. The existing Connect account has application loss responsibility; Stripe documents insufficient-balance reversal failures for Stripe-loss-liable accounts. No balance, payout schedule or account setting is changed.",
+    "The reversal is actually accepted by Stripe; only its response and the next verification read are deliberately interrupted locally.",
+    "The late bank win is a controlled canonical-response simulation over the exact real lost dispute. Stripe has no documented native late-win sandbox trigger; the actual Stripe dispute remains lost.",
+    "Native authorization expiry, live configuration, legal/email launch work and a permanent worker are outside this run."
+  ],
+  "status": "passed-cleaned",
+  "cleanupErrors": []
+}

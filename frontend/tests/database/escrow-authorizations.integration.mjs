@@ -98,7 +98,11 @@ before(async () => {
   await db.exec(await read(accessMigration))
   await db.exec(await read('migrations/20261026232843_escrow_authorization_lifecycle.sql'))
   await db.exec(await read('migrations/20261027104647_escrow_dispute_canonical_corrections.sql'))
+  await db.exec(await read('migrations/20261027105222_escrow_admin_approved_recovery.sql'))
+  await db.exec(await read('migrations/20261027111542_escrow_recovery_settlement_currency.sql'))
   await db.exec(await read('migrations/20261027113829_payment_transaction_currencies.sql'))
+  await db.exec(await read('migrations/20261027145521_escrow_capture_webhook_claim_resolution.sql'))
+  await db.exec(await read('migrations/20261027145611_preserve_financial_review_attention.sql'))
 })
 after(async () => { await db.close() })
 
@@ -144,7 +148,13 @@ async function both(p) { await confirmOrder(p); await confirmOrder(p, authUser(p
 const refund = (id, status, amount = 4000) => ({ id, status, amount, currency: 'eur' })
 const refunds = (p, rows, readTime = observed()) => rpc('reconcile_order_refunds($1,$2,$3,$4::jsonb)', [p.id, p.intent, readTime, JSON.stringify(rows)])
 const webhook = (p, type, obj = {}) => rpc('process_stripe_webhook_event($1::jsonb,$2,$3)', [JSON.stringify({
-  id: `evt_${randomUUID()}`, type, created: Math.floor(Date.now() / 1000), data: { object: { id: p.intent, amount: 4000, application_fee_amount: 200, amount_capturable: 4000, ...obj } },
+  id: `evt_${randomUUID()}`, type, created: Math.floor(Date.now() / 1000), data: { object: {
+    id: p.intent, amount: 4000, application_fee_amount: 200, currency: 'eur', capture_method: 'manual',
+    status: type === 'payment_intent.succeeded' ? 'succeeded' : 'requires_capture',
+    amount_received: type === 'payment_intent.succeeded' ? 4000 : 0,
+    amount_capturable: type === 'payment_intent.succeeded' ? 0 : 4000,
+    metadata: { listing_id: p.listing, buyer_profile_id: p.buyer, seller_profile_id: p.seller }, ...obj,
+  } },
 }), p.intent, null])
 
 test('transactions preserve original charge/refund units and exact destination-transfer currency', async () => {

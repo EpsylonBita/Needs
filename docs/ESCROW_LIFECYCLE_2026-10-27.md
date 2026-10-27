@@ -21,7 +21,7 @@ Database integration covers permissions, stale cancellation requests, capture/ca
 
 For a hosted environment, configure the same random `PAYMENTS_WORKER_SECRET` (at least 32 characters) in the application and worker. Run `node scripts/payments-reconciliation-worker.mjs` with that secret and the HTTPS application origin in `NEXT_PUBLIC_APP_URL`. The worker drains successful batches, then polls every five minutes while idle. Run it as a supervised service and alert on non-success responses or unexpected process exit. An external scheduler may invoke the exact authenticated `POST /api/internal/payments/reconcile` endpoint; each request leases at most two rows, so scheduler frequency/concurrency must cover the queue volume. `--once` checks one batch and exits nonzero on failure.
 
-Lifecycle provider reads use a 12-second timeout; approved-recovery provider requests use 8 seconds. Both disable hidden SDK retries. At most two orders are reconciled concurrently. The process limits each application request to 125 seconds. Database leases prevent duplicate workers from selecting the same order, reject expired leases, and back off failed rows. Never deploy this endpoint with a public client secret or use a user-session token as the scheduler credential.
+Lifecycle provider reads use a 12-second timeout; approved-recovery provider requests use 8 seconds. Both set `maxNetworkRetries: 0` to disable configurable SDK retries; the installed Stripe SDK still retries a closed connection once for `ECONNRESET` or `EPIPE`. Mutation idempotency keys remain necessary. At most two orders are reconciled concurrently. The process limits each application request to 125 seconds. Database leases prevent duplicate workers from selecting the same order, reject expired leases, and back off failed rows. Never deploy this endpoint with a public client secret or use a user-session token as the scheduler credential.
 
 Unsettled payments are due every five minutes; settled payments are revisited every six hours for missed refund/dispute events. The worker may resume a previously accepted cancellation or an existing administrator-approved seller recovery. It cannot create a new recovery approval or capture money automatically. More than 100 refund/dispute records on one payment require manual review rather than accepting an incomplete financial snapshot.
 
@@ -47,7 +47,7 @@ A later launch account needs its own keys, matching webhook endpoint/signing sec
 - Cleanup completed successfully. A separate provider read confirmed five test PaymentIntents: two captured EUR 2 payments, each fully refunded, and three canceled intents. No authorization remains open. NEEDS database counts returned to 8 listings, 0 payments, 0 service-price agreements, 0 cancellation requests and 0 users belonging to either test run. Stripe test history and the synthetic connected provider are retained for inspection. The temporary app/listener stopped cleanly, restored generated Next configuration, and the existing application on port 3002 still returned HTTP 200.
 - The sandbox's existing test key remains in ignored local configuration; no new CLI OAuth authorization was approved. The other project's keys, webhook configuration and application environment were not changed. No live money was used.
 
-The actual provider-run transcript is `stripe-sandbox-verification-attempt2.log`; the independent final Stripe snapshot is `stripe-sandbox-results.json`. Both are local review artifacts, alongside screenshots, under the task's `2026/10/26/01a177a2-ad08-7d92-80f5-586d2402dafd` visualization directory. They contain no API keys. Optional milestone execution was not enabled against the shared database; milestone behavior remains covered by automated tests.
+The actual provider-run transcript is `stripe-sandbox-verification-attempt2.log`; the independent final Stripe snapshot is `stripe-sandbox-results.json`. Both are local review artifacts, alongside screenshots, under the task's `2026/10/26/01a177a2-ad08-7d92-80f5-586d2402dafd` visualization directory. They contain no API keys. At that point, optional milestone execution had not been exercised against Stripe. The isolated milestone run below supplies that later evidence without enabling the shared feature flag.
 
 ## Browser SCA and automatic reconciliation verification
 
@@ -139,6 +139,41 @@ The user explicitly authorized one separate EUR 2 test authorization to remain u
 - Preparation encountered two explicit validation rejections: an API-removed request parameter and its cached idempotency mismatch. Complete provider-list reads proved no intent existed before the audited request/key revision. The same run was retained, both rejection/absence records preserved, and only the accepted request created the hold. Fifteen offline helper tests cover identity, uncertain responses, retry keys, saved deadlines and read-only verification.
 
 After final code integration, a fresh six-suite financial/admin regression run passed **75/75 tests**. The original `.env.local` checksum and generated Next configuration remained unchanged. A final HTTP probe of port 3002 found no listener; this run did not start or reconfigure that original application. The isolated verification server was stopped intentionally.
+
+## Milestones and rare recovery verification
+
+The final isolated runs on 27 October 2026 passed **5/5 milestone groups** (`needs-milestones-1cd73eaf-c48c-41fc-959f-495362690cde`, 15:00:42–15:01:40 UTC) and **5/5 recovery groups** (`needs-recovery-edgecases-157e24ad-76b1-4eb8-9b72-612c4befa5a8`, 15:01:55–15:02:45 UTC). Both exited 0 with `passed-cleaned` and no cleanup errors. Only sandbox `acct_1UUqkiLEgZ0a06x6`, its existing synthetic connected seller, and the isolated server on port 3003 were used.
+
+Milestone verification exercised authenticated application APIs, actual Stripe authorizations/captures/refunds, and actual CLI webhook delivery. Two EUR 2 proposals respected a EUR 4 budget; an excess proposal was rejected. Repeated funding reused the same intent. Capture required both participants, and webhook replay retained one charge. Administrator refunds returned both seller proceeds and platform fees. A canceled stage retained its failed attempt, created one replacement, and then completed and refunded correctly. The shared `milestones_enabled` row remained absent: an explicitly enabled private process fixture supplied only that configuration response after checking the actual disabled database state. This run verifies the payment/API lifecycle, not a new browser milestone journey or global feature activation.
+
+Recovery verification used one real EUR 2 capture and an actual test-card chargeback resolved as `lost`. It then exercised:
+
+- A narrowly bound, pre-forward `balance_insufficient` response. The application retained one pending approval and created no Stripe reversal.
+- A **real accepted Stripe reversal**, followed by a deliberately lost `ETIMEDOUT` response and one failed verification read. The application returned pending. After removing the fault, one authenticated finite worker recovered the existing reversal, original approval, fee return and exactly one recovery ledger entry. Repeated execution produced no second reversal or customer refund.
+- A canonical dispute-read simulation changing only that actual lost dispute to `won`, after independently verifying the completed reversal. Two finite worker passes preserved the financial review warning and ledger, notified the two participants once, and sent no compensating transfer or refund. Disabling the fixture confirmed Stripe's actual dispute was still lost.
+
+The balance failure and late bank win are **controlled simulations over real test objects**, not native Stripe bank outcomes. The existing connected account assigns payment losses to the application; Stripe documents insufficient-balance reversal failures for Stripe-loss-liable accounts. No account liability, balance or payout setting was changed to manufacture that condition. No documented native late-win sandbox trigger was identified. See [Stripe's Connect dispute guidance](https://docs.stripe.com/connect/disputes). The accepted reversal itself, its transfer/fee settlement and subsequent recovery reads were actual Stripe operations.
+
+### Defects found and corrected
+
+The first milestone attempt exposed a stale capture reservation after a valid success webhook. It blocked administrator refunds and also blocked the first recovery preview after a real lost chargeback. The processor now verifies the intent, capture status/method, full received amount, zero capturable amount, fee, currency and original participants before clearing the reservation atomically. Matching terminal replays can repair the same historical reservation; malformed evidence and cancellation guards remain enforced.
+
+A second defect was reproduced in four database regressions: subsequent provider reconciliation erased the warning for late bank wins and recovery cases requiring review. The durable financial reason now survives later reads; ordinary transient warnings still clear. Existing review flags are restored without changing amounts, payment status or ledger entries.
+
+| Applied remote version | Local migration | Change |
+| --- | --- | --- |
+| `20261027150014` | `20261027145521_escrow_capture_webhook_claim_resolution.sql` | Resolve validated completed capture reservations |
+| `20261027150024` | `20261027145611_preserve_financial_review_attention.sql` | Preserve durable financial review attention |
+
+Both migrations are already applied to NEEDS (`qczrqxmewjsydrrvjdil`); do not replay them because the recorded timestamps differ. Browser roles remain unable to execute the financial RPCs; the new private predicate is not browser-accessible. The before/after security-advisor comparison was unchanged, including pre-existing findings. Independent review found no blockers. Local validation passed 130 database tests, followed by 55 tests on the integrated final migration chain. The private fixture/harness guards passed 24 tests. All 318 payment API tests across 21 suites also passed against the final application code.
+
+### Cleanup and evidence
+
+An independent read at 15:03:43 UTC checked all **six new intents**, including the initial failed attempts: three fully customer-refunded charges, one canceled intent and two lost disputes with seller transfers and platform fees fully returned. The bank losses received no second customer refund. NEEDS returned to eight listings and zero payments, milestones, agreements, cancellations, recoveries or recovery-ledger rows; all temporary users were removed.
+
+The original application environment checksum and shared feature flags were unchanged. The natural-expiry hold remained `requires_capture`, with zero received amount and the original deadline. Fault controls were disabled, the isolated app/listener stopped, and generated Next configuration was restored. No permanent worker, live payment configuration, deployment or other Stripe project was changed.
+
+Sanitized records: [milestones](verification/stripe-milestones-2026-10-27.json), [rare recovery](verification/stripe-recovery-edgecases-2026-10-27.json), and [independent final state](verification/stripe-advanced-final-state-2026-10-27.json). Failed-attempt evidence remains in the ignored private test directory.
 
 ## Remaining verification and activation boundary
 

@@ -1,0 +1,41 @@
+{
+  "run": "needs-milestones-1cd73eaf-c48c-41fc-959f-495362690cde",
+  "beganAt": "2026-10-27T15:00:42.373Z",
+  "platform": "acct_1UUqkiLEgZ0a06x6",
+  "connectedAccount": "acct_1UUyVUL5kmhcKzLl",
+  "origin": "http://localhost:3003",
+  "checks": [
+    {
+      "name": "two milestone proposals preserve EUR amounts and participants; total budget is enforced",
+      "total": 4,
+      "currency": "eur"
+    },
+    {
+      "name": "saved milestone funds exactly once; authorization, two-party capture and real duplicate webhook preserve one charge",
+      "intentId": "pi_3UVBrpLEgZ0a06x62XocYZjJ",
+      "milestoneId": "22b3971c-0a87-4858-aafa-52609ef3682f"
+    },
+    {
+      "name": "milestone complaint and admin refund reverse the actual transfer and fee once",
+      "intentId": "pi_3UVBrpLEgZ0a06x62XocYZjJ"
+    },
+    {
+      "name": "canceled milestone retains failed history and one replacement; replacement completes and refunds",
+      "canceledIntentId": "pi_3UVBsALEgZ0a06x623it1SAB",
+      "replacementIntentId": "pi_3UVBsGLEgZ0a06x605Yxuhgo"
+    },
+    {
+      "name": "global feature flags and the unrelated natural-expiry authorization remain unchanged",
+      "featureFixtureReadCount": 10
+    }
+  ],
+  "protectedIntent": "pi_3UV98JLEgZ0a06x60Cd6e9Ig",
+  "featureGate": "private process-only configuration fixture; shared flag remains absent",
+  "status": "passed-cleaned",
+  "finishedAt": "2026-10-27T15:01:40.520Z",
+  "error": null,
+  "cleanupErrors": [],
+  "originalEnvironmentUnchanged": true,
+  "naturalExpiryUnchanged": true,
+  "sharedFeatureFlagsUnchanged": true
+}
