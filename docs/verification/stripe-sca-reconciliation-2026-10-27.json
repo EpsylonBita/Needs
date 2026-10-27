@@ -1,0 +1,143 @@
+{
+  "run": "needs-sca-worker-2cc63e48-4b79-420d-8429-57eb3dd7947f",
+  "platform": "acct_1UUqkiLEgZ0a06x6",
+  "origin": "http://localhost:3003",
+  "checks": [
+    {
+      "name": "worker endpoint rejects absent and wrong secrets before fixture writes"
+    },
+    {
+      "name": "browser 3DS fail",
+      "providerStatus": "requires_payment_method",
+      "threeDS": null
+    },
+    {
+      "name": "browser 3DS cancel",
+      "providerStatus": "requires_payment_method",
+      "threeDS": null
+    },
+    {
+      "name": "browser 3DS success",
+      "providerStatus": "requires_capture",
+      "threeDS": {
+        "result": "authenticated",
+        "flow": "challenge"
+      }
+    },
+    {
+      "name": "browser-authenticated payment captured only after both app confirmations and refunded through app"
+    },
+    {
+      "name": "automatic worker drains three missed authorizations across bounded batches to idle",
+      "batches": [
+        {
+          "claimed": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        {
+          "claimed": 1,
+          "completed": 1,
+          "failed": 0
+        },
+        {
+          "claimed": 0,
+          "completed": 0,
+          "failed": 0
+        }
+      ],
+      "missed": [
+        {
+          "eventId": "evt_3UUzAyLEgZ0a06x60uUS9QHL",
+          "eventCreated": 1793064466,
+          "relayDropSince": 1793064465
+        },
+        {
+          "eventId": "evt_3UUzB5LEgZ0a06x62J1AHl7C",
+          "eventCreated": 1793064472,
+          "relayDropSince": 1793064472
+        },
+        {
+          "eventId": "evt_3UUzBBLEgZ0a06x60gSS7Q9q",
+          "eventCreated": 1793064479,
+          "relayDropSince": 1793064478
+        }
+      ]
+    },
+    {
+      "name": "worker never captures a due authorization, even with both completion confirmations"
+    },
+    {
+      "name": "worker recovers missed completion and repeated checks do not duplicate its ledger",
+      "eventId": "evt_3UUzB5LEgZ0a06x62OBn81ay",
+      "eventCreated": 1793064490,
+      "relayDropSince": 1793064472
+    },
+    {
+      "name": "worker recovers a missed full refund once and preserves canonical refund deduplication",
+      "eventId": "evt_3UUzB5LEgZ0a06x62u9AFAL7",
+      "eventCreated": 1793064498,
+      "relayDropSince": 1793064472
+    },
+    {
+      "name": "worker resumes an accepted durable cancellation claim and releases only that held payment",
+      "eventId": "evt_3UUzAyLEgZ0a06x60sybROf7",
+      "eventCreated": 1793064506,
+      "relayDropSince": 1793064465
+    }
+  ],
+  "workerBatches": [
+    {
+      "claimed": 2,
+      "completed": 2,
+      "failed": 0
+    },
+    {
+      "claimed": 1,
+      "completed": 1,
+      "failed": 0
+    },
+    {
+      "claimed": 0,
+      "completed": 0,
+      "failed": 0
+    },
+    {
+      "claimed": 1,
+      "completed": 1,
+      "failed": 0
+    },
+    {
+      "claimed": 1,
+      "completed": 1,
+      "failed": 0
+    },
+    {
+      "claimed": 1,
+      "completed": 1,
+      "failed": 0
+    },
+    {
+      "claimed": 1,
+      "completed": 1,
+      "failed": 0
+    },
+    {
+      "claimed": 1,
+      "completed": 1,
+      "failed": 0
+    },
+    {
+      "claimed": 1,
+      "completed": 1,
+      "failed": 0
+    },
+    {
+      "claimed": 0,
+      "completed": 0,
+      "failed": 0
+    }
+  ],
+  "status": "passed-cleaned",
+  "cleanupErrors": []
+}

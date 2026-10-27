@@ -45,6 +45,8 @@ Temporary fixtures are removed in `finally`, after canceling or refunding exact 
 
 The runner does not accelerate a real card authorization clock, test completed browser SCA challenges, verify bank payouts, send receipts, call the scheduled reconciliation endpoint, or mutate real-user records. Those remain separate checks. Local database/unit tests exercise expiry transitions, races and uncertain provider responses; they are not substitutes for this real test-mode cycle. No successful external run is implied by the presence of this script.
 
+A separate authorized sandbox run on 2026-10-27 completed browser SCA failure/cancellation/success and real reconciliation-worker recovery checks. See [the execution evidence](../../docs/ESCROW_LIFECYCLE_2026-10-27.md#browser-sca-and-automatic-reconciliation-verification) for results and limits; these checks are not part of this script's default journeys.
+
 Offline checks, requiring no credentials or network calls:
 
 ```powershell
