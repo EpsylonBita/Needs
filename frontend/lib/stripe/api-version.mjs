@@ -8,7 +8,7 @@ export function stripeListenerArguments(origin) {
   return ['listen', '--skip-update', '--color', 'off', '--latest', '--events', [
     'account.updated', 'payment_intent.succeeded', 'payment_intent.payment_failed',
     'payment_intent.canceled', 'payment_intent.amount_capturable_updated',
-    'charge.refunded', 'charge.dispute.created', 'charge.dispute.closed',
+    'charge.refunded', 'charge.dispute.created', 'charge.dispute.updated', 'charge.dispute.closed', 'charge.dispute.funds_reinstated',
     'refund.created', 'refund.updated', 'refund.failed', 'transfer.created',
   ].join(','), '--forward-to', endpoint, '--forward-connect-to', endpoint];
 }

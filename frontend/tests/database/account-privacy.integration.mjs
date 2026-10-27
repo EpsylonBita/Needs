@@ -26,6 +26,9 @@ before(async () => {
   for (const name of ['profiles', 'listings', 'listing_images', 'listing_tags', 'chats', 'chat_participants', 'messages', 'payments', 'transactions', 'disputes', 'reviews', 'notifications']) await db.exec(table(source, name).replace('geography(Point,4326)', 'text'))
   await db.exec(await load('sql/017_add_profile_columns.sql'))
   await db.exec(await load('sql/009_milestones.sql'))
+  await db.exec(await load('sql/013_webhook_events.sql'))
+  await db.exec(await load('sql/023_webhook_events_extended.sql'))
+  await db.exec('alter table transactions add column metadata jsonb')
   await db.exec(`alter table profiles add column secret_field text; alter table payments add column currency text default 'eur'; alter table payments add column completed_at timestamptz;
     alter table disputes add column stripe_dispute_id text; alter table chat_participants add column left_at timestamptz;`)
   for (let i = 0; i < 3; i++) {
@@ -46,6 +49,7 @@ before(async () => {
   }
   const migration = await load('migrations/20261026141000_account_privacy_requests.sql')
   await db.exec(migration); await db.exec(migration)
+  await db.exec(await load('migrations/20261027113829_payment_transaction_currencies.sql'))
 })
 after(() => db.close())
 
@@ -56,11 +60,26 @@ test('exports owned records and participant finances without private counterpart
   assert.equal(value.sent_messages.length, 1); assert.equal(value.sent_messages[0].content, 'Own message')
   assert.equal(value.payments.length, 1); assert.equal(value.payments[0].role, 'buyer')
   assert.equal(value.payments[0].transactions.length, 1)
+  assert.equal(value.payments[0].transactions[0].currency, 'eur')
   assert.equal(value.payments[0].disputes[0].reason, 'Own complaint')
   assert.equal(value.authored_reviews.length, 1)
   assert.doesNotMatch(JSON.stringify(value), /Other private|Other listing|Other notice|Other complaint|Other review|secret-|secret_intent|person1@/)
   const provider = await rpc('export_account_data', [users[1]])
   assert.equal(provider.payments.find(row => row.id === payments[0]).disputes[0].reason, null)
+})
+
+test('export labels an FX transfer independently and keeps unknown legacy currency null', async () => {
+  const eventId = `evt_${randomUUID()}`, transfer = `tr_${randomUUID()}`
+  const event = { id: eventId, type: 'transfer.created', data: { object: { id: transfer, amount: 223, currency: 'usd' } } }
+  await db.query("insert into webhook_events(id,source,event_type,payload) values($1,'stripe','transfer.created',$2::jsonb)", [eventId, JSON.stringify(event)])
+  const recorded = (await db.query("insert into transactions(payment_id,type,amount,status,metadata) values($1,'transfer',2.23,'created',$2::jsonb) returning id", [payments[0], JSON.stringify({ stripe_event_id: eventId, stripe_object_id: transfer, stripe_payment_intent_id: 'secret_intent_0' })])).rows[0].id
+  const legacy = (await db.query("insert into transactions(payment_id,type,amount,status) values($1,'transfer',3.45,'created') returning id", [payments[0]])).rows[0].id
+  const exported = (await rpc('export_account_data', [users[0]])).payments[0]
+  assert.equal(exported.currency, 'eur')
+  assert.equal(exported.transactions.find(row => row.id === recorded).currency, 'usd')
+  assert.equal(exported.transactions.find(row => row.id === recorded).amount, 2.23)
+  assert.equal(exported.transactions.find(row => row.id === legacy).currency, null)
+  assert.doesNotMatch(JSON.stringify(exported), /stripe_event_id|secret_intent_0/)
 })
 
 test('denies every RPC/table to untrusted clients and preserves other private-schema access grants', async () => {

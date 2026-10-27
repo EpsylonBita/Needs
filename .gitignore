@@ -9,3 +9,7 @@ supabase/.temp/
 frontend/playwright-report/
 frontend/test-results/
 frontend/.next-e2e/
+
+# Local browser verification artifacts, including transient session snapshots.
+.playwright-cli/
+output/playwright/

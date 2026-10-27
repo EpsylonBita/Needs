@@ -10,12 +10,17 @@ export const GET = withApiErrorHandler(async (request: NextRequest) => {
   if (!auth.allowed) throw ErrorFactory.authorization(auth.reason || 'forbidden')
   const url = new URL(request.url)
   const status = url.searchParams.get('status')
-  let q = supabaseAdmin.from('disputes').select('id, status, reason, payment_id, created_at')
+  if (status && !['all', 'open', 'resolved', 'refunded', 'rejected', 'won', 'lost'].includes(status)) throw ErrorFactory.validation('Invalid dispute status')
+  let q = supabaseAdmin.from('disputes').select('id, status, reason, payment_id, created_at, stripe_dispute_id, amount, currency, resolved_at')
   if (status && status !== 'all') q = q.eq('status', status)
   const { data, error } = await q.order('created_at', { ascending: false })
   if (error) throw ErrorFactory.database('Dispute export could not be loaded')
-  const rows = (data || []) as any[]
-  const header = ['id','status','reason','payment_id','created_at']
-  const csv = [header.join(','), ...rows.map(r => header.map(h => String(r[h] ?? '').replace(/,/g,';')).join(','))].join('\n')
+  const header = ['id', 'status', 'reason', 'payment_id', 'created_at', 'stripe_dispute_id', 'amount', 'currency', 'resolved_at'] as const
+  const cell = (value: unknown) => {
+    const text = String(value ?? '')
+    const safe = /^[\s]*[=+\-@\t\r]/.test(text) ? `'${text}` : text
+    return `"${safe.replace(/"/g, '""')}"`
+  }
+  const csv = [header.join(','), ...(data || []).map(row => header.map(key => cell(row[key])).join(','))].join('\r\n')
   return new Response(csv, { headers: { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename="disputes.csv"', 'Cache-Control': 'private, no-store' } })
 })

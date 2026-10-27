@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ constructEvent: vi.fn(), rpc: vi.fn(), from: vi.fn(), retrieveCharge: vi.fn(), retrieveAccount: vi.fn(), listRefunds: vi.fn() }))
-vi.mock('@/lib/stripe/server', () => ({ stripe: { webhooks: { constructEvent: mocks.constructEvent }, charges: { retrieve: mocks.retrieveCharge }, accounts: { retrieve: mocks.retrieveAccount }, refunds: { list: mocks.listRefunds } } }))
+const mocks = vi.hoisted(() => ({ constructEvent: vi.fn(), rpc: vi.fn(), from: vi.fn(), retrieveCharge: vi.fn(), retrieveAccount: vi.fn(), listRefunds: vi.fn(), listDisputes: vi.fn() }))
+vi.mock('@/lib/stripe/server', () => ({ stripe: { webhooks: { constructEvent: mocks.constructEvent }, charges: { retrieve: mocks.retrieveCharge }, accounts: { retrieve: mocks.retrieveAccount }, refunds: { list: mocks.listRefunds }, disputes: { list: mocks.listDisputes } } }))
 vi.mock('@/lib/supabase/server', () => ({ supabaseAdmin: { rpc: mocks.rpc, from: mocks.from } }))
 vi.mock('@/lib/utils/logger', () => ({ log: vi.fn() }))
 import { POST } from '@/app/api/payments/webhook/route'
@@ -93,5 +93,31 @@ describe('Webhook delivery reliability', () => {
     mocks.listRefunds.mockResolvedValue({ data: [{ id: 're_1', amount: 1000, currency: 'eur', status: 'failed', failure_reason: 'declined' }], has_more: false })
     expect((await POST(request())).status).toBe(200)
     expect(mocks.rpc).toHaveBeenCalledWith('process_stripe_refund_event', expect.objectContaining({ p_payment_intent: 'pi_retry', p_refunds: [{ id: 're_1', amount: 1000, currency: 'eur', status: 'failed', failure_reason: 'declined' }] }))
+  })
+
+  it.each(['charge.dispute.created', 'charge.dispute.updated', 'charge.dispute.closed', 'charge.dispute.funds_reinstated'])('uses current late-win truth for %s before its atomic event marker', async type => {
+    const staleEvent = { id: 'evt_dispute', type, data: { object: { id: 'dp_1', charge: 'ch_123', status: 'lost' } } }
+    mocks.constructEvent.mockReturnValue(staleEvent)
+    mocks.retrieveCharge.mockResolvedValue({ id: 'ch_123', payment_intent: 'pi_retry' })
+    mocks.listDisputes.mockResolvedValue({ data: [{ id: 'dp_1', payment_intent: 'pi_retry', amount: 1000, currency: 'eur', status: 'won', reason: 'fraudulent' }], has_more: false })
+    const before = Date.now()
+    expect((await POST(request())).status).toBe(200)
+    expect(mocks.listDisputes).toHaveBeenCalledWith({ payment_intent: 'pi_retry', limit: 100 }, { timeout: 12000, maxNetworkRetries: 0 })
+    expect(mocks.rpc).toHaveBeenCalledWith('process_stripe_dispute_event', expect.objectContaining({
+      p_event: staleEvent, p_payment_intent: 'pi_retry',
+      p_disputes: [{ id: 'dp_1', amount: 1000, currency: 'eur', status: 'won', reason: 'fraudulent' }],
+    }))
+    const time = Date.parse(mocks.rpc.mock.calls[0][1].p_read_started_at)
+    expect(time).toBeGreaterThanOrEqual(before)
+    expect(time).toBeLessThanOrEqual(Date.now())
+  })
+
+  it.each(['truncated', 'foreign', 'missing', 'unavailable'])('does not mark a dispute event processed when the current list is %s', async problem => {
+    mocks.constructEvent.mockReturnValue({ id: 'evt_dispute', type: 'charge.dispute.updated', data: { object: { id: 'dp_1', charge: 'ch_123', status: 'won' } } })
+    mocks.retrieveCharge.mockResolvedValue({ id: 'ch_123', payment_intent: 'pi_retry' })
+    if (problem === 'unavailable') mocks.listDisputes.mockRejectedValueOnce(new Error('Stripe unavailable'))
+    else mocks.listDisputes.mockResolvedValue({ has_more: problem === 'truncated', data: problem === 'missing' ? [] : [{ id: 'dp_1', payment_intent: problem === 'foreign' ? 'pi_other' : 'pi_retry', status: 'won' }] })
+    expect((await POST(request())).status).toBe(500)
+    expect(mocks.rpc).not.toHaveBeenCalled()
   })
 })

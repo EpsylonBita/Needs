@@ -1,0 +1,19 @@
+[Unit]
+Description=Check NEEDS payment worker health
+After=needs-payments-worker.service
+
+[Service]
+Type=oneshot
+User=needs-payments
+Group=needs-payments
+Environment=PAYMENTS_WORKER_HEALTH_FILE=/run/needs-payments/health.json
+ExecStart=/usr/bin/node /srv/needs/frontend/scripts/payments-reconciliation-worker.mjs --health-check
+TimeoutStartSec=15s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictSUIDSGID=true
+LockPersonality=true
+StandardOutput=journal
+StandardError=journal

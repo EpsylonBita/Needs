@@ -54,6 +54,9 @@ describe('Local Stripe webhook version alignment', () => {
     expect(args).toContain('--latest')
     expect(args[args.indexOf('--forward-to') + 1]).toBe('http://127.0.0.1:3002/api/payments/webhook')
     expect(args[args.indexOf('--forward-connect-to') + 1]).toBe('http://127.0.0.1:3002/api/payments/webhook')
+    expect(args[args.indexOf('--events') + 1].split(',')).toEqual(expect.arrayContaining([
+      'charge.dispute.created', 'charge.dispute.updated', 'charge.dispute.closed', 'charge.dispute.funds_reinstated',
+    ]))
   })
   it('accepts only the reviewed API version before starting the application', () => {
     expect(stripeListenerReady(`Ready! You are using Stripe API Version [${STRIPE_API_VERSION}]. Your webhook signing secret is whsec_fixture`)).toEqual({ apiVersion: STRIPE_API_VERSION, signingSecret: 'whsec_fixture' })

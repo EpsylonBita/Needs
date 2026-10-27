@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { orderMoney } from '@/components/features/orders/order-copy';
 import { paymentLabel, transactionLabel } from '@/components/features/payments/payment-labels';
 
-type Tx = { id: string; amount: number; status: string; type: string; currency?: string };
+type Tx = { id: string; amount: number; status: string; type: string; currency: string | null };
 type Dp = { id: string; status: string; reason: string | null };
 type Pay = { id: string; status: string; amount: number; currency?: string; buyer_id: string; seller_id: string; stripe_payment_intent: string | null; buyer_confirmed?: boolean; seller_confirmed?: boolean; role_review_required?: boolean };
 const columns = 'id,status,amount,currency,buyer_id,seller_id,stripe_payment_intent,buyer_confirmed,seller_confirmed,role_review_required';
@@ -21,6 +21,9 @@ export default function PaymentsPage() {
   const { locale } = useI18n();
   const language = locale === 'el' ? 'el' : 'en';
   const copy = copies[language];
+  const transactionMoney = (transaction: Tx) => transaction.currency && /^[a-z]{3}$/i.test(transaction.currency)
+    ? orderMoney(Number(transaction.amount), transaction.currency, language)
+    : `${Number(transaction.amount).toFixed(2)} — ${language === 'el' ? 'μη διαθέσιμο νόμισμα' : 'currency unavailable'}`;
   const paymentsEnabled = (process.env.NEXT_PUBLIC_PAYMENTS_ENABLED || '').toLowerCase() === 'true';
   const [txs, setTxs] = useState<Tx[]>([]);
   const [dps, setDps] = useState<Dp[]>([]);
@@ -51,11 +54,11 @@ export default function PaymentsPage() {
       let transactions: Tx[] = []; let disputes: Dp[] = [];
       if (ids.length) {
         const [tx, dp] = await Promise.all([
-          supabase.from('transactions').select('id,amount,status,type,payment_id').in('payment_id', ids),
+          supabase.from('transactions').select('id,amount,status,type,currency').in('payment_id', ids),
           supabase.from('disputes').select('id,status,reason').in('payment_id', ids),
         ]);
         if (tx.error || dp.error) throw new Error('History unavailable');
-        transactions = (tx.data || []).map(row => ({ ...row, currency: payments.data?.find(payment => payment.id === row.payment_id)?.currency || 'eur' }));
+        transactions = (tx.data || []) as Tx[];
         disputes = (dp.data || []) as Dp[];
       }
       if (!cancelled) { setMyProfileId(profile.data.id); setPays((payments.data || []) as Pay[]); setTxs(transactions); setDps(disputes); }
@@ -118,7 +121,7 @@ export default function PaymentsPage() {
         {!pays.length && <tr><td className="p-5 text-muted-foreground" colSpan={3}>{copy.noPayments}</td></tr>}
       </tbody></table></div></section>
       <div className="grid gap-6 md:grid-cols-2"><section className="space-y-3"><h2 className="text-xl font-semibold">{copy.transactions}</h2><div className="overflow-x-auto rounded-2xl border"><table className="w-full text-sm"><caption className="sr-only">{copy.transactions}</caption><thead><tr className="bg-muted/40 text-left"><th scope="col" className="p-3">{copy.type}</th><th scope="col" className="p-3">{copy.status}</th><th scope="col" className="p-3">{copy.amount}</th></tr></thead><tbody>
-        {txs.map(tx => <tr key={tx.id} className="border-t"><td className="p-3">{transactionLabel(tx.type, language)}</td><td className="p-3">{paymentLabel(tx.status, language)}</td><td className="whitespace-nowrap p-3">{orderMoney(Number(tx.amount), tx.currency || 'eur', language)}</td></tr>)}
+        {txs.map(tx => <tr key={tx.id} className="border-t"><td className="p-3">{transactionLabel(tx.type, language)}</td><td className="p-3">{paymentLabel(tx.status, language)}</td><td className="whitespace-nowrap p-3">{transactionMoney(tx)}</td></tr>)}
         {!txs.length && <tr><td className="p-5 text-muted-foreground" colSpan={3}>{copy.noTransactions}</td></tr>}
       </tbody></table></div></section><section className="space-y-3"><h2 className="text-xl font-semibold">{copy.disputes}</h2><div className="overflow-x-auto rounded-2xl border"><table className="w-full text-sm"><caption className="sr-only">{copy.disputes}</caption><thead><tr className="bg-muted/40 text-left"><th scope="col" className="p-3">{copy.status}</th><th scope="col" className="p-3">{copy.reason}</th></tr></thead><tbody>
         {dps.map(dispute => <tr key={dispute.id} className="border-t"><td className="p-3">{paymentLabel(dispute.status, language)}</td><td className="p-3">{dispute.reason || '—'}</td></tr>)}
