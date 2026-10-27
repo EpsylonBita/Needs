@@ -18,12 +18,16 @@ export async function syncConnectedAccount(accountId: string) {
   if ('deleted' in account) throw ErrorFactory.businessLogic('Payout account is no longer available')
   const transfersEnabled = account.capabilities?.transfers === 'active'
   const ready = account.details_submitted && transfersEnabled && account.payouts_enabled
+  // Controller-based accounts can have type 'none'. The nullable legacy column
+  // classifies only these three types; capabilities still determine readiness.
+  const legacyAccountType = account.type === 'express' || account.type === 'standard' || account.type === 'custom'
+    ? account.type : null
   const { error } = await supabaseAdmin.from('profiles').update({
     stripe_onboarding_complete: ready,
     stripe_charges_enabled: account.charges_enabled,
     stripe_payouts_enabled: account.payouts_enabled,
     stripe_details_submitted: account.details_submitted,
-    stripe_account_type: account.type,
+    stripe_account_type: legacyAccountType,
   }).eq('stripe_account_id', account.id)
   if (error) throw ErrorFactory.database('Could not update payout account status')
   return {

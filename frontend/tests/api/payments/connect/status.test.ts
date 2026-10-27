@@ -34,6 +34,32 @@ describe('Connect onboarding status', () => {
     expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ stripe_onboarding_complete: true }))
     expect(mocks.saved).toHaveBeenCalledWith('stripe_account_id', 'acct_owner')
   })
+  it.each(['none', 'future_controller_type'])('accepts a capable controller account with type %s without inventing a legacy type', async type => {
+    mocks.retrieve.mockResolvedValue({
+      id: 'acct_owner', type, details_submitted: true, charges_enabled: true, payouts_enabled: true,
+      capabilities: { transfers: 'active' },
+      controller: { requirement_collection: 'application', stripe_dashboard: { type: 'none' },
+        fees: { payer: 'application' }, losses: { payments: 'application' } },
+    })
+    // Match the existing nullable database CHECK, which accepts only legacy types.
+    mocks.saved.mockImplementation(async () => {
+      const persistedType = mocks.update.mock.lastCall?.[0].stripe_account_type
+      return { error: persistedType === null || ['express', 'standard', 'custom'].includes(persistedType)
+        ? null : { message: 'profiles_stripe_account_type_check' } }
+    })
+    const response = await GET(request())
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ connected: true, ready: true, transfersEnabled: true, payoutsEnabled: true })
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({
+      stripe_account_type: null, stripe_onboarding_complete: true, stripe_charges_enabled: true,
+      stripe_payouts_enabled: true, stripe_details_submitted: true,
+    }))
+  })
+  it.each(['express', 'standard', 'custom'])('preserves the recognized legacy account type %s', async type => {
+    mocks.retrieve.mockResolvedValue({ id: 'acct_owner', type, details_submitted: true, charges_enabled: true, payouts_enabled: true, capabilities: { transfers: 'active' } })
+    expect((await GET(request())).status).toBe(200)
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ stripe_account_type: type }))
+  })
   it('does not call incomplete onboarding ready just because Stripe returned to the application', async () => {
     mocks.retrieve.mockResolvedValue({ id: 'acct_owner', details_submitted: true, payouts_enabled: false, charges_enabled: false, capabilities: { transfers: 'pending' } })
     expect(await (await GET(request())).json()).toMatchObject({ ready: false, transfersEnabled: false })

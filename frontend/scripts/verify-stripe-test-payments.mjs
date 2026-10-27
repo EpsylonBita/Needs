@@ -276,8 +276,9 @@ try {
   const operator = await createUser('admin');
   check(await admin.from('profiles').update({ stripe_account_id: connectedId }).eq('id', seller.profileId), 'attach disposable test seller');
   const statusResponse = await fetch(new URL('/api/payments/connect/status', origin), { headers: { Authorization: `Bearer ${seller.token}` } });
-  assert.equal(statusResponse.status, 200);
-  assert.equal((await statusResponse.json()).transfersEnabled, true);
+  const statusPayload = await statusResponse.json();
+  assert.equal(statusResponse.status, 200, `Connect status: HTTP ${statusResponse.status}; ${statusPayload.error || statusPayload.message || statusResponse.statusText}`);
+  assert.equal(statusPayload.transfersEnabled, true);
   pass('authenticated Connect status and verified test fixtures');
 
   const listingId = await listing(seller, 'listing');

@@ -59,6 +59,28 @@ describe('Webhook delivery reliability', () => {
     expect(mocks.rpc).toHaveBeenCalledWith('process_stripe_webhook_event', expect.objectContaining({ p_payment_intent: null }))
   })
 
+  it('persists and acknowledges a controller-based account.updated with no legacy account type', async () => {
+    mocks.constructEvent.mockReturnValue({ id: 'evt_controller_account', type: 'account.updated', data: { object: { id: 'acct_seller', type: 'express' } } })
+    mocks.retrieveAccount.mockResolvedValue({
+      id: 'acct_seller', type: 'none', capabilities: { transfers: 'active' },
+      charges_enabled: true, payouts_enabled: true, details_submitted: true,
+      controller: { requirement_collection: 'application', stripe_dashboard: { type: 'none' },
+        fees: { payer: 'application' }, losses: { payments: 'application' } },
+    })
+    let persisted: Record<string, unknown> | undefined
+    mocks.from.mockImplementation(() => ({
+      update: (value: Record<string, unknown>) => {
+        persisted = value
+        return { eq: async () => ({ error: value.stripe_account_type === null
+          ? null : { message: 'profiles_stripe_account_type_check' } }) }
+      },
+    }))
+    expect((await POST(request())).status).toBe(200)
+    expect(persisted).toMatchObject({ stripe_account_type: null, stripe_onboarding_complete: true, stripe_payouts_enabled: true })
+    expect(mocks.retrieveAccount).toHaveBeenCalledWith('acct_seller')
+    expect(mocks.rpc).toHaveBeenCalledWith('process_stripe_webhook_event', expect.objectContaining({ p_payment_intent: null }))
+  })
+
   it('does not acknowledge account updates that cannot be synchronized', async () => {
     mocks.constructEvent.mockReturnValue({ id: 'evt_account', type: 'account.updated', data: { object: { id: 'acct_seller' } } })
     mocks.retrieveAccount.mockRejectedValueOnce(new Error('Stripe unavailable'))
