@@ -1,8 +1,11 @@
+'use client'
+
 import Image from 'next/image'
 import Link from 'next/link'
 import { Package, UserRound } from 'lucide-react'
 import type { OrderDTO, OrderParty } from '@/lib/orders/types'
 import { paymentStatusLabel, type OrderCopy } from './order-copy'
+import { useAuthorizationDeadline } from './order-authorization'
 import styles from './orders.module.css'
 
 export function OrderThumbnail({ order }: { order: OrderDTO }) {
@@ -15,5 +18,7 @@ export function OrderPerson({ person, copy, link = true }: { person: OrderParty;
   return link ? <Link href={`/profile/${encodeURIComponent(person.id)}`} className={styles.person}>{content}</Link> : <div className={styles.person}>{content}</div>
 }
 export function OrderStatus({ order, copy }: { order: OrderDTO; copy: OrderCopy }) {
-  return <span className={styles.badge} data-status={order.status}>{paymentStatusLabel(order, copy)}</span>
+  const { expired } = useAuthorizationDeadline(order.authorization?.expires_at)
+  const label = expired && order.status === 'requires_capture' && !order.stripe_canceled_at && !order.capture_pending && !order.cancel_pending ? copy.authorizationExpired : paymentStatusLabel(order, copy)
+  return <span className={styles.badge} data-status={order.status}>{label}</span>
 }

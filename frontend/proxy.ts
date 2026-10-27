@@ -78,7 +78,7 @@ export async function proxy(request: NextRequest) {
     path.startsWith('/api/auth') ||
     path.startsWith('/api/payments/webhook') ||
     // This exact worker endpoint requires its own server-only bearer secret.
-    (request.method === 'POST' && path === '/api/internal/contact/dispatch')
+    (request.method === 'POST' && (path === '/api/internal/contact/dispatch' || path === '/api/internal/payments/reconcile'))
   );
   
   if (requiresCsrfCheck) {

@@ -14,7 +14,7 @@ const env = {
   NEXT_PUBLIC_PAYMENTS_ENABLED: 'false',
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: 'pk_test_e2e_fixture',
   STRIPE_SECRET_KEY: 'sk_test_e2e_fixture', STRIPE_WEBHOOK_SECRET: 'whsec_e2e_fixture',
-  RESEND_API_KEY: '', CONTACT_EMAIL_FROM: '', CONTACT_NOTIFY_TO: '', CRON_SECRET: '', ADMIN_EMAILS: '',
+  RESEND_API_KEY: '', CONTACT_EMAIL_FROM: '', CONTACT_NOTIFY_TO: '', CRON_SECRET: '', PAYMENTS_WORKER_SECRET: '', ADMIN_EMAILS: '',
 };
 let child;
 let stopping = false;

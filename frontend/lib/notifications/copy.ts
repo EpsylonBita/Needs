@@ -6,7 +6,7 @@ export const notificationCopy = {
     updateError: 'The notification could not be marked as read. Please try again.',
     empty: 'No notifications yet', emptyHint: 'When there is an update for your account, it will appear here.',
     unread: 'Unread', read: 'Read', markRead: 'Mark as read', saving: 'Saving…', more: 'Load older notifications',
-    signIn: 'Sign in to see your notifications.', viewPayment: 'View payments', unknownTitle: 'Account update',
+    signIn: 'Sign in to see your notifications.', viewPayment: 'View order', unknownTitle: 'Account update',
     unknownDescription: 'There is an update for your account.', viewConversation: 'Open conversation',
   },
   el: {
@@ -16,7 +16,7 @@ export const notificationCopy = {
     updateError: 'Η ειδοποίηση δεν σημειώθηκε ως αναγνωσμένη. Δοκίμασε ξανά.',
     empty: 'Δεν έχεις ειδοποιήσεις ακόμη', emptyHint: 'Όταν υπάρξει ενημέρωση για τον λογαριασμό σου, θα εμφανιστεί εδώ.',
     unread: 'Μη αναγνωσμένη', read: 'Αναγνωσμένη', markRead: 'Σήμανση ως αναγνωσμένη', saving: 'Αποθήκευση…', more: 'Παλαιότερες ειδοποιήσεις',
-    signIn: 'Συνδέσου για να δεις τις ειδοποιήσεις σου.', viewPayment: 'Προβολή πληρωμών', unknownTitle: 'Ενημέρωση λογαριασμού',
+    signIn: 'Συνδέσου για να δεις τις ειδοποιήσεις σου.', viewPayment: 'Προβολή παραγγελίας', unknownTitle: 'Ενημέρωση λογαριασμού',
     unknownDescription: 'Υπάρχει μια ενημέρωση για τον λογαριασμό σου.', viewConversation: 'Άνοιγμα συνομιλίας',
   },
 }

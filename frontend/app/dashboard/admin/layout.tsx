@@ -24,7 +24,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="text-lg font-bold">{t('admin.title','Admin')}</div>
         <nav className="flex flex-col gap-2">
           <Link href="/dashboard/admin/overview" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.overview','Overview')}</Link>
-          <Link href="/dashboard/admin/payments" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.payments','Payments')}</Link>
+          <Link href="/dashboard/payments/admin" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.payments','Payments')}</Link>
           <Link href="/dashboard/admin/disputes" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.disputes','Disputes')}</Link>
           <Link href="/dashboard/admin/listings" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.listings','Listings')}</Link>
           <Link href="/dashboard/admin/users" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.users','Users')}</Link>

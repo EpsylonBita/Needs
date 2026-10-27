@@ -7,6 +7,8 @@ const projectDir = path.dirname(fileURLToPath(import.meta.url))
 export default defineConfig({
   test: {
     include: ['tests/**/*.test.{ts,tsx,mjs}'],
+    // These exercise executable Node scripts using node:test, not jsdom/Vitest.
+    exclude: ['tests/scripts/payments-reconciliation-worker.test.mjs', 'tests/scripts/verify-stripe-test-payments.test.mjs'],
     environment: 'jsdom',
     setupFiles: [path.resolve(projectDir, 'tests/setup.ts')],
     globals: true,

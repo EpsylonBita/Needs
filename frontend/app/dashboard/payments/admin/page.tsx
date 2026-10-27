@@ -8,11 +8,12 @@ import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Responsi
 import { supabase } from '@/lib/supabase/client'
 import { withCsrfHeaders } from '@/lib/utils/csrf'
 import { useI18n } from '@/contexts/i18n-context'
+import { AdminAuthorizationRelease } from '@/components/features/orders/admin-authorization-release'
 
 type Dispute = { id: string; status: string; reason: string | null; payment_id: string }
 type Revenue = { currency: string; volume: number; fee: number }
 type MonthlyRevenue = Revenue & { month: string }
-type PaymentRow = { id: string; status: string; amount: number; platform_fee: number; currency: string; created_at: string; role_review_required?: boolean }
+type PaymentRow = { id: string; status: string; amount: number; platform_fee: number; currency: string; created_at: string; role_review_required?: boolean; authorization_expires_at?: string | null; provider_checked_at?: string | null; provider_status?: string | null; attention_required?: boolean; cancel_claim_id?: string | null; stripe_canceled_at?: string | null }
 const money = (amount: number, currency = 'USD') => new Intl.NumberFormat('en', { style: 'currency', currency }).format(amount)
 
 async function adminHeaders(signInMessage: string) {
@@ -41,6 +42,7 @@ export default function PaymentsAdminPage() {
   const [page, setPage] = useState(0)
   const [total, setTotal] = useState(0)
   const [rows, setRows] = useState<PaymentRow[]>([])
+  const [refreshVersion, setRefreshVersion] = useState(0)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -71,7 +73,7 @@ export default function PaymentsAdminPage() {
     }
     void run()
     return () => controller.abort()
-  }, [statusFilter, yearFilter, page, roleReviewOnly, router, signInMessage, loadError])
+  }, [statusFilter, yearFilter, page, roleReviewOnly, router, signInMessage, loadError, refreshVersion])
 
   const actOnDispute = async (id: string, action: 'resolve' | 'refund') => {
     if (loading) return
@@ -151,7 +153,7 @@ export default function PaymentsAdminPage() {
           <button onClick={exportPayments} className="px-3 py-1 rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80">Export CSV</button>
         </div>
         <table className="w-full text-sm">
-          <thead><tr className="text-left"><th className="p-2">ID</th><th className="p-2">Status</th><th className="p-2">Amount</th><th className="p-2">Fee</th><th className="p-2">When</th></tr></thead>
+          <thead><tr className="text-left"><th className="p-2">ID</th><th className="p-2">Status</th><th className="p-2">Amount</th><th className="p-2">Fee</th><th className="p-2">When</th><th className="p-2">{locale === 'el' ? 'Δέσμευση' : 'Authorization'}</th></tr></thead>
           <tbody>
             {rows.map(r => (
               <tr key={r.id} className="border-t">
@@ -160,9 +162,10 @@ export default function PaymentsAdminPage() {
                 <td className="p-2">{money(Number(r.amount), r.currency || 'USD')}</td>
                 <td className="p-2">{money(Number(r.platform_fee || 0), r.currency || 'USD')}</td>
                 <td className="p-2">{new Date(r.created_at).toLocaleString()}</td>
+                <td className="space-y-2 p-2">{r.authorization_expires_at && <p className="text-xs">{locale === 'el' ? 'Προθεσμία: ' : 'Deadline: '}<time dateTime={r.authorization_expires_at}>{new Date(r.authorization_expires_at).toLocaleString(locale === 'el' ? 'el-GR' : 'en-GB')}</time></p>}{r.stripe_canceled_at ? <p className="text-xs">{locale === 'el' ? 'Το Stripe επιβεβαίωσε την αποδέσμευση.' : 'Stripe confirmed release.'}</p> : ['requires_capture', 'failed'].includes(r.status) && allowed === true && <AdminAuthorizationRelease paymentId={r.id} onUpdated={() => setRefreshVersion(value => value + 1)} />}</td>
               </tr>
             ))}
-            {rows.length===0 && (<tr><td className="p-2" colSpan={5}>No payments</td></tr>)}
+            {rows.length===0 && (<tr><td className="p-2" colSpan={6}>No payments</td></tr>)}
           </tbody>
         </table>
         <div className="p-2 flex items-center gap-2">

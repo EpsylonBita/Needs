@@ -15,7 +15,7 @@ export const GET = withApiErrorHandler(async (request: NextRequest) => {
   if (roleReview && roleReview !== 'required') throw ErrorFactory.validation('Invalid payment review filter')
   const limit = Number(url.searchParams.get('limit') || '20')
   const offset = Number(url.searchParams.get('offset') || '0')
-  let q = supabaseAdmin.from('payments').select('id, status, amount, platform_fee, currency, buyer_id, seller_id, stripe_payment_intent, created_at, role_review_required', { count: 'exact' })
+  let q = supabaseAdmin.from('payments').select('id, status, amount, platform_fee, currency, buyer_id, seller_id, stripe_payment_intent, created_at, role_review_required, authorization_expires_at, provider_checked_at, provider_status, attention_required, cancel_claim_id, stripe_canceled_at', { count: 'exact' })
   if (roleReview === 'required') q = q.eq('role_review_required', true)
   if (status && status !== 'all') q = q.eq('status', status)
   if (year && year !== 'all') q = q.gte('created_at', `${year}-01-01`).lte('created_at', `${year}-12-31`)

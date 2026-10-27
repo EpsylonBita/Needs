@@ -91,6 +91,7 @@
     "test:ui": "vitest --ui",
     "test:payments": "vitest run payments --reporter=verbose",
     "test:db": "node --test tests/database/*.integration.mjs",
+    "test:scripts": "node --test tests/scripts/payments-reconciliation-worker.test.mjs tests/scripts/verify-stripe-test-payments.test.mjs",
     "typecheck": "tsc --noEmit --pretty false",
     "test:ci": "vitest run --maxWorkers=2",
     "test:e2e": "playwright test"

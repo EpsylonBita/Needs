@@ -32,6 +32,23 @@ export const orderCopy = {
     open: 'Open', resolved: 'Resolved', rejected: 'Rejected', won: 'Won', lost: 'Lost',
     refundedAmount: 'Refund completed', refundPending: 'Refund pending', refundFailed: 'A refund attempt failed. This does not confirm a successful refund.',
     reviewHeading: 'Your review', review: 'Leave a review', reviewHint: 'Review the provider for this completed payment.', rating: 'Rating', chooseRating: 'Choose a rating', comment: 'Comment (optional)', submitReview: 'Publish review', reviewSaved: 'Your review was published.', reviewed: 'You have reviewed this order.', reviewInvalid: 'Choose a rating from 1 to 5 and use up to 4,000 characters.',
+    expires: 'Authorization deadline', timeLeft: 'Time remaining', dayShort: 'd', hourShort: 'h', minuteShort: 'min',
+    deadlineUnknown: 'The authorization deadline has not been verified. Refresh its status before relying on the hold.',
+    expiresDay: 'Less than 24 hours remain on this authorization.', expiresHour: 'Less than one hour remains on this authorization.',
+    authorizationExpired: 'Authorization deadline passed', expiredHint: 'Do not rely on this hold. Refresh to verify its status with Stripe. Expiry does not automatically charge the payer.',
+    noAutoCharge: 'The deadline does not trigger a charge. Both parties must still confirm completion before payment can be finalized.',
+    released: 'Authorization released', releasedHint: 'Stripe confirmed the authorization was canceled. No payment was collected from this hold.',
+    checked: 'Last verified', attention: 'The authorization needs verification. Refresh its status.', refreshFailed: 'The latest Stripe status could not be verified. Refresh before making changes.',
+    cancelHeading: 'Cancel this order', requestCancel: 'Request cancellation', acceptCancel: 'Accept cancellation', rejectCancel: 'Decline cancellation', withdrawCancel: 'Withdraw request',
+    requestCancelTitle: 'Request cancellation of this order?', requestCancelHint: 'Explain why the order should be canceled. The other participant must accept before the authorization can be released.',
+    acceptCancelTitle: 'Accept cancellation and release the hold?', acceptCancelHint: 'This requests cancellation of the authorization without collecting payment. Release is confirmed only after Stripe verifies it.',
+    rejectCancelTitle: 'Decline this cancellation request?', rejectCancelHint: 'The order remains active. The authorization deadline and both completion confirmations still apply.',
+    withdrawCancelTitle: 'Withdraw your cancellation request?', withdrawCancelHint: 'The order remains active. No payment is collected by withdrawing this request.',
+    cancelReason: 'Reason for cancellation', cancelReasonInvalid: 'Enter a reason between 5 and 1,000 characters.',
+    cancellationProposed: 'Cancellation requested', cancellationAccepted: 'Cancellation accepted', cancellationRejected: 'Cancellation declined', cancellationWithdrawn: 'Cancellation request withdrawn', cancellationCanceled: 'Authorization canceled',
+    waitingCancellation: 'Waiting for the other participant to respond. Completion and finalizing payment are paused.',
+    reviewCancellation: 'The other participant requested cancellation. Review the reason before responding.',
+    cancelSaved: 'The cancellation response was saved.', cancelPending: 'The release request was received. Stripe has not yet confirmed the result. Refresh to check its status.',
   },
   el: {
     title: 'Οι παραγγελίες μου', subtitle: 'Δες τις αγορές, τα αντικείμενα και τις υπηρεσίες που προσφέρεις και το επόμενο βήμα κάθε πληρωμής.',
@@ -64,14 +81,34 @@ export const orderCopy = {
     open: 'Ανοικτό', resolved: 'Επιλύθηκε', rejected: 'Απορρίφθηκε', won: 'Δεκτή έκβαση', lost: 'Αρνητική έκβαση',
     refundedAmount: 'Ολοκληρωμένη επιστροφή', refundPending: 'Επιστροφή σε αναμονή', refundFailed: 'Μια απόπειρα επιστροφής απέτυχε. Αυτό δεν επιβεβαιώνει επιτυχή επιστροφή χρημάτων.',
     reviewHeading: 'Η αξιολόγησή σου', review: 'Γράψε αξιολόγηση', reviewHint: 'Αξιολόγησε τον πάροχο για αυτή την ολοκληρωμένη πληρωμή.', rating: 'Βαθμολογία', chooseRating: 'Επίλεξε βαθμολογία', comment: 'Σχόλιο (προαιρετικό)', submitReview: 'Δημοσίευση αξιολόγησης', reviewSaved: 'Η αξιολόγησή σου δημοσιεύτηκε.', reviewed: 'Έχεις αξιολογήσει αυτή την παραγγελία.', reviewInvalid: 'Επίλεξε βαθμολογία από 1 έως 5 και χρησιμοποίησε έως 4.000 χαρακτήρες.',
+    expires: 'Προθεσμία δέσμευσης', timeLeft: 'Χρόνος που απομένει', dayShort: 'ημ.', hourShort: 'ώρ.', minuteShort: 'λεπ.',
+    deadlineUnknown: 'Η προθεσμία δέσμευσης δεν έχει επαληθευτεί. Ανανέωσε την κατάσταση πριν βασιστείς στη δέσμευση.',
+    expiresDay: 'Απομένουν λιγότερες από 24 ώρες για αυτή τη δέσμευση.', expiresHour: 'Απομένει λιγότερη από μία ώρα για αυτή τη δέσμευση.',
+    authorizationExpired: 'Η προθεσμία δέσμευσης πέρασε', expiredHint: 'Μη βασίζεσαι πλέον σε αυτή τη δέσμευση. Ανανέωσε για επαλήθευση από το Stripe. Η λήξη δεν χρεώνει αυτόματα τον πληρωτή.',
+    noAutoCharge: 'Η προθεσμία δεν ενεργοποιεί χρέωση. Και τα δύο μέρη πρέπει να επιβεβαιώσουν την ολοκλήρωση πριν οριστικοποιηθεί η πληρωμή.',
+    released: 'Η δέσμευση αποδεσμεύτηκε', releasedHint: 'Το Stripe επιβεβαίωσε την ακύρωση της δέσμευσης. Δεν εισπράχθηκε πληρωμή από αυτή τη δέσμευση.',
+    checked: 'Τελευταία επαλήθευση', attention: 'Η δέσμευση χρειάζεται επαλήθευση. Ανανέωσε την κατάστασή της.', refreshFailed: 'Η νεότερη κατάσταση στο Stripe δεν επαληθεύτηκε. Ανανέωσε πριν κάνεις αλλαγές.',
+    cancelHeading: 'Ακύρωση παραγγελίας', requestCancel: 'Αίτημα ακύρωσης', acceptCancel: 'Αποδοχή ακύρωσης', rejectCancel: 'Απόρριψη ακύρωσης', withdrawCancel: 'Ανάκληση αιτήματος',
+    requestCancelTitle: 'Να ζητηθεί ακύρωση της παραγγελίας;', requestCancelHint: 'Εξήγησε τον λόγο ακύρωσης. Το άλλο μέρος πρέπει να αποδεχτεί πριν αποδεσμευτεί το ποσό.',
+    acceptCancelTitle: 'Αποδοχή ακύρωσης και αποδέσμευση;', acceptCancelHint: 'Ζητείται ακύρωση της δέσμευσης χωρίς είσπραξη πληρωμής. Η αποδέσμευση επιβεβαιώνεται μόνο μετά την επαλήθευση από το Stripe.',
+    rejectCancelTitle: 'Να απορριφθεί το αίτημα ακύρωσης;', rejectCancelHint: 'Η παραγγελία παραμένει ενεργή. Η προθεσμία δέσμευσης και η επιβεβαίωση και των δύο μερών εξακολουθούν να ισχύουν.',
+    withdrawCancelTitle: 'Να ανακληθεί το αίτημα ακύρωσής σου;', withdrawCancelHint: 'Η παραγγελία παραμένει ενεργή. Η ανάκληση του αιτήματος δεν εισπράττει πληρωμή.',
+    cancelReason: 'Λόγος ακύρωσης', cancelReasonInvalid: 'Συμπλήρωσε έναν λόγο με 5 έως 1.000 χαρακτήρες.',
+    cancellationProposed: 'Ζητήθηκε ακύρωση', cancellationAccepted: 'Η ακύρωση έγινε αποδεκτή', cancellationRejected: 'Η ακύρωση απορρίφθηκε', cancellationWithdrawn: 'Το αίτημα ακύρωσης ανακλήθηκε', cancellationCanceled: 'Η δέσμευση ακυρώθηκε',
+    waitingCancellation: 'Αναμονή απάντησης από το άλλο μέρος. Η επιβεβαίωση ολοκλήρωσης και η οριστικοποίηση πληρωμής έχουν ανασταλεί.',
+    reviewCancellation: 'Το άλλο μέρος ζήτησε ακύρωση. Δες τον λόγο πριν απαντήσεις.',
+    cancelSaved: 'Η απάντηση στην ακύρωση αποθηκεύτηκε.', cancelPending: 'Το αίτημα αποδέσμευσης παραλήφθηκε. Το Stripe δεν έχει επιβεβαιώσει ακόμη το αποτέλεσμα. Ανανέωσε για έλεγχο.',
   },
 }
 export type OrderCopy = typeof orderCopy.en
 export const paymentStatusLabel = (order: OrderDTO, copy: OrderCopy): string => {
+  if (order.stripe_canceled_at) return copy.released
+  if (order.cancel_pending) return copy.processing
   if (order.capture_pending) return copy.processing
   if (order.status === 'requires_capture') return order.authorization_state === 'authorized' ? copy.authorized : copy.unverified
   return ({ requires_payment_method: copy.requires_payment_method, completed: copy.completed, failed: copy.failed, refunded: copy.refunded, disputed: copy.disputed } as Record<string, string>)[order.status] || copy.unknown
 }
+export const cancellationStatusLabel = (status: string, copy: OrderCopy) => ({ proposed: copy.cancellationProposed, accepted: copy.cancellationAccepted, rejected: copy.cancellationRejected, withdrawn: copy.cancellationWithdrawn, canceled: copy.cancellationCanceled } as Record<string, string>)[status] || copy.unknown
 export const disputeStatusLabel = (status: string, copy: OrderCopy) => ({ open: copy.open, resolved: copy.resolved, rejected: copy.rejected, refunded: copy.refunded, won: copy.won, lost: copy.lost } as Record<string, string>)[status] || copy.unknown
 export function orderMoney(amount: number, currency: string, locale: string) {
   try { return new Intl.NumberFormat(locale === 'el' ? 'el-GR' : 'en-GB', { style: 'currency', currency: currency.toUpperCase() }).format(amount) }

@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { getMyOrders, type OrderCursor } from '@/lib/services/order-service'
 import { orderCopy, orderDate, orderMoney } from './order-copy'
 import { OrderPerson, OrderStatus, OrderThumbnail } from './order-parts'
+import { OrderAuthorization } from './order-authorization'
 import styles from './orders.module.css'
 
 function AccountOrders({ userId }: { userId: string }) {
@@ -49,6 +50,7 @@ function AccountOrders({ userId }: { userId: string }) {
             {order.milestone && <p className={`${styles.muted} mt-2`}>{copy.milestones}: {order.milestone.title}</p>}
           </div></div>
           {order.role_review_required && <p className={styles.notice}>{copy.legacy}</p>}
+          <OrderAuthorization order={order} locale={locale} compact />
           <div className={styles.cardFooter}><OrderPerson person={other} copy={copy} /><div className={styles.actions}><Button asChild variant="outline"><Link href={path}>{copy.view}<ArrowUpRight size={15} aria-hidden="true" /></Link></Button></div></div>
         </article>
       })}</div>

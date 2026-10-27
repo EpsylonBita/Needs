@@ -72,8 +72,16 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
       throw ErrorFactory.businessLogic('The Stripe payment does not match this order', { userMessage: 'The payment details need administrator review before completion.' })
     }
   }
-  let intent = await stripe.paymentIntents.retrieve(intentId)
+  const expiredAuthorization = (value: Awaited<ReturnType<typeof stripe.paymentIntents.retrieve>>) => {
+    const charge = typeof value.latest_charge === 'object' ? value.latest_charge : null
+    const deadline = charge?.payment_method_details?.card?.capture_before
+    return value.status === 'requires_capture' && typeof deadline === 'number' && deadline * 1000 <= Date.now()
+  }
+  let intent = await stripe.paymentIntents.retrieve(intentId, { expand: ['latest_charge'] })
   verifyIntent(intent)
+  if (expiredAuthorization(intent)) {
+    return NextResponse.json({ error: 'The authorization deadline has passed. Refresh the order to check the release of funds.' }, { status: 409 })
+  }
   // The row lock checks both confirmations, trusted authorization evidence and
   // complaints together. A pending claim blocks complaints until reconciliation.
   const { data: claim, error: claimError } = await supabaseAdmin.rpc('claim_order_capture', { p_payment_id: payment.id, p_user_id: user.id })
@@ -90,7 +98,7 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
   }
   // The authorization can change while acquiring the shared reservation. Read
   // again after the claim; a stale pre-claim snapshot cannot justify a release.
-  try { intent = await stripe.paymentIntents.retrieve(intentId); verifyIntent(intent) }
+  try { intent = await stripe.paymentIntents.retrieve(intentId, { expand: ['latest_charge'] }); verifyIntent(intent) }
   catch { return NextResponse.json({ captured: false, pending: true, status: 'verification_pending' }, { status: 202 }) }
   const result = async () => {
     if (intent.status === 'succeeded') {
@@ -107,6 +115,9 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
     return NextResponse.json({ captured: false, pending: true, status: intent.status }, { status: 202 })
   }
   if (claim.status === 'completed' || intent.status !== 'requires_capture') return result()
+  if (expiredAuthorization(intent)) {
+    return NextResponse.json({ error: 'The authorization deadline has passed. Refresh the order to check the release of funds.' }, { status: 409 })
+  }
   if (intent.amount_capturable !== Math.round(Number(payment.amount) * 100)) {
     // A reduced/expired authorization needs review; keep the claim to avoid a
     // complaint racing an already submitted or partial capture.

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { captureOrder, confirmOrder, getMyOrder, getMyOrders, reportOrderProblem, submitOrderReview, type OrderDTO } from '@/lib/services/order-service'
+import { captureOrder, confirmOrder, getMyOrder, getMyOrders, reconcileOrder, changeOrderCancellation, reportOrderProblem, submitOrderReview, type OrderDTO } from '@/lib/services/order-service'
 
 const state = vi.hoisted(() => ({ userId: '', sessionId: '', rpc: vi.fn(), fetch: vi.fn(), csrf: vi.fn() }))
 vi.mock('@/lib/supabase/client', () => ({ supabase: {
@@ -19,7 +19,8 @@ const row: OrderDTO = {
   buyer: { id: profile, display_name: 'Buyer', avatar_url: null }, seller: { id: otherProfile, display_name: 'Provider', avatar_url: null },
   my_role: 'buyer', chat_id: null, milestone: null, buyer_confirmed: false, seller_confirmed: true, role_review_required: false,
   authorization_state: 'authorized', capture_pending: false, complaint: null, disputes: [], refund: { succeeded_amount: 0, pending_amount: 0, failed: false }, review: null,
-  actions: { can_confirm: true, can_capture: false, can_complain: true, can_review: false },
+  authorization: { expires_at: null, last_checked_at: null, provider_status: null, attention_required: true }, cancellation: null, cancel_pending: false, stripe_canceled_at: null,
+  actions: { can_confirm: true, can_capture: false, can_complain: true, can_review: false, can_request_cancel: false, can_accept_cancel: false, can_reject_cancel: false, can_withdraw_cancel: false, can_reconcile: true },
 }
 const page = () => ({ profile_id: profile, payments_enabled: false, rows: [row], next_cursor: null })
 beforeEach(() => {
@@ -105,5 +106,41 @@ describe('account-bound orders service', () => {
     await expect(submitOrderReview(payment, 4.5, '', user)).rejects.toThrow()
     await expect(submitOrderReview(payment, 4, 'x'.repeat(4001), user)).rejects.toThrow()
     expect(state.fetch).toHaveBeenCalledTimes(1)
+  })
+  it('reconciles the provider through the explicit authenticated endpoint and keeps its exact deadline', async () => {
+    const expires = '2026-10-28T15:43:21Z'
+    state.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ ...row, authorization: { ...row.authorization, expires_at: expires } }) })
+    const controller = new AbortController()
+    expect((await reconcileOrder(payment, user, controller.signal)).authorization.expires_at).toBe(expires)
+    expect(state.fetch).toHaveBeenCalledWith('/api/orders/reconcile', expect.objectContaining({ signal: controller.signal, body: JSON.stringify({ paymentId: payment, expectedUserId: user }) }))
+    controller.abort()
+    await expect(reconcileOrder(payment, user, controller.signal)).rejects.toThrow()
+    expect(state.fetch).toHaveBeenCalledTimes(1)
+  })
+  it('requires a reason before requesting cancellation and preserves the expected request version', async () => {
+    await expect(changeOrderCancellation(payment, { action: 'request', expectedCancellationId: null }, user)).rejects.toThrow()
+    await expect(changeOrderCancellation(payment, { action: 'request', expectedCancellationId: null, reason: ' no ' }, user)).rejects.toThrow()
+    await expect(changeOrderCancellation(payment, { action: 'request', expectedCancellationId: null, reason: 'x'.repeat(1001) }, user)).rejects.toThrow()
+    expect(state.fetch).not.toHaveBeenCalled()
+    state.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ ...row, actions: { ...row.actions, can_withdraw_cancel: true } }) })
+    const result = await changeOrderCancellation(payment, { action: 'request', expectedCancellationId: listing, reason: ' Schedule changed ' }, user)
+    expect(JSON.parse(state.fetch.mock.calls[0][1].body)).toEqual({ paymentId: payment, expectedUserId: user, action: 'request', expectedCancellationId: listing, reason: 'Schedule changed' })
+    expect(result.actions.can_withdraw_cancel).toBe(true)
+    expect(result.payments_enabled).toBe(false)
+  })
+  it('accepts a 202 pending cancellation without asserting that Stripe released the money', async () => {
+    state.fetch.mockResolvedValueOnce({ ok: true, status: 202, json: async () => ({ ...row, cancel_pending: true, cancellation: { id: listing, status: 'accepted', requested_by: otherProfile, reason: 'Cannot attend', requested_at: row.created_at } }) })
+    const saved = await changeOrderCancellation(payment, { action: 'accept', expectedCancellationId: listing }, user)
+    expect(saved.cancel_pending).toBe(true)
+    expect(saved.stripe_canceled_at).toBeNull()
+    expect(JSON.parse(state.fetch.mock.calls[0][1].body)).toEqual({ paymentId: payment, expectedUserId: user, action: 'accept', expectedCancellationId: listing })
+  })
+  it('rejects malformed deadlines, foreign reconciliation results and changed-account cancellation responses', async () => {
+    state.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ ...row, authorization: { ...row.authorization, expires_at: 'guess-seven-days' } }) })
+    await expect(reconcileOrder(payment, user)).rejects.toThrow('verified')
+    state.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ ...row, id: listing }) })
+    await expect(reconcileOrder(payment, user)).rejects.toThrow('verified')
+    state.fetch.mockImplementation(async () => { state.userId = otherUser; return { ok: true, json: async () => row } })
+    await expect(changeOrderCancellation(payment, { action: 'reject', expectedCancellationId: listing }, user)).rejects.toThrow('account changed')
   })
 })

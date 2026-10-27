@@ -75,6 +75,17 @@ describe('capture verifies provider state and atomically claims the order', () =
     s.retrieve.mockResolvedValue({ ...intent(), amount_capturable: 1200 }); expect((await POST(request())).status).toBe(409)
     s.payment.status = 'failed'; expect((await POST(request())).status).toBe(409); expect(s.capture).not.toHaveBeenCalled()
   })
+  it('rejects an expired Stripe deadline before reserving or capturing the payment', async () => {
+    s.retrieve.mockResolvedValue({ ...intent(), latest_charge: { payment_method_details: { card: { capture_before: Math.floor(Date.now() / 1000) - 1 } } } })
+    expect((await POST(request())).status).toBe(409)
+    expect(s.rpc).not.toHaveBeenCalled(); expect(s.capture).not.toHaveBeenCalled()
+  })
+  it('checks the deadline again after the database capture reservation', async () => {
+    s.retrieve.mockResolvedValueOnce(intent()).mockResolvedValueOnce({ ...intent(), latest_charge: { payment_method_details: { card: { capture_before: Math.floor(Date.now() / 1000) - 1 } } } })
+    expect((await POST(request())).status).toBe(409)
+    expect(s.capture).not.toHaveBeenCalled()
+    expect(s.rpc.mock.calls.map(call => call[0])).toEqual(['claim_order_capture'])
+  })
   it('reconciles prior provider success without capturing twice', async () => {
     s.retrieve.mockResolvedValue(intent('succeeded'))
     expect((await POST(request())).status).toBe(200); expect(s.capture).not.toHaveBeenCalled()

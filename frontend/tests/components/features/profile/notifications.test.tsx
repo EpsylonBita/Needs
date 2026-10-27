@@ -54,7 +54,7 @@ describe('notification journeys', () => {
     state.locale = 'el'; mount()
     expect(await screen.findByText('Η πληρωμή σου ολοκληρώθηκε')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Ειδοποιήσεις' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Προβολή πληρωμών' })).toHaveAttribute('href', '/dashboard/payments')
+    expect(screen.getByRole('link', { name: 'Προβολή παραγγελίας' })).toHaveAttribute('href', '/dashboard/orders/20000000-0000-4000-8000-000000000001')
     expect(screen.queryByText(/internal-secret|payment_sent|payment_id/)).toBeNull()
   })
   it.each([

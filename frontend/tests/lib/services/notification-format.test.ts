@@ -2,8 +2,23 @@ import { describe, expect, it } from 'vitest'
 import { formatNotification } from '@/lib/notifications/format-notification'
 const row = { id: 'test', type: 'payment_sent', payload: { payment_id: '10000000-0000-4000-8000-000000000001' }, read: false, created_at: '2026-10-19T12:00:00Z' }
 describe('notification messages', () => {
+  it.each(['payment_authorization_expiring', 'payment_authorization_expired', 'payment_attention_required', 'payment_cancellation_requested', 'payment_cancellation_accepted', 'payment_cancellation_rejected', 'payment_cancellation_withdrawn', 'payment_canceled'])('localizes %s and links the real order without leaking raw audit data', type => {
+    for (const locale of ['en', 'el']) {
+      const result = formatNotification({ ...row, type, payload: { ...row.payload, reason_code: 'private_internal_reason', reason: 'private cancellation text', url: 'https://evil.invalid' } }, locale)
+      expect(result.href).toBe(`/dashboard/orders/${row.payload.payment_id}`)
+      expect(result.title).not.toMatch(/Account update|Ενημέρωση λογαριασμού/)
+      expect(JSON.stringify(result)).not.toMatch(/private_|private cancellation|evil/)
+    }
+  })
+  it('distinguishes a passing deadline from a verified release and limits urgency to recognized thresholds', () => {
+    expect(formatNotification({ ...row, type: 'payment_authorization_expiring', payload: { ...row.payload, threshold: '1h' } }, 'en').description).toContain('Less than one hour')
+    expect(formatNotification({ ...row, type: 'payment_authorization_expiring', payload: { ...row.payload, threshold: '24h' } }, 'el').description).toContain('24 ώρες')
+    expect(formatNotification({ ...row, type: 'payment_authorization_expiring', payload: { ...row.payload, threshold: 'forged!' } }, 'en').description).not.toContain('forged!')
+    expect(formatNotification({ ...row, type: 'payment_authorization_expired' }, 'en').description).toContain('verify')
+    expect(formatNotification({ ...row, type: 'payment_canceled' }, 'en').description).toContain('Stripe confirmed')
+  })
   it('formats actual events in Greek and English without exposing internal payloads', () => {
-    expect(formatNotification(row, 'el')).toMatchObject({ title: 'Η πληρωμή σου ολοκληρώθηκε', href: '/dashboard/payments' })
+    expect(formatNotification(row, 'el')).toMatchObject({ title: 'Η πληρωμή σου ολοκληρώθηκε', href: `/dashboard/orders/${row.payload.payment_id}` })
     expect(formatNotification(row, 'en').title).toBe('Your payment completed')
     for (const type of ['payment_completed', 'transfer_created', 'dispute_opened', 'dispute_resolved', 'payment_refund_failed']) {
       expect(formatNotification({ ...row, type }, 'el').title).not.toBe('Ενημέρωση λογαριασμού')

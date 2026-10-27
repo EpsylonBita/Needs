@@ -3,6 +3,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomBytes } from 'node:crypto';
 import nextEnv from '@next/env';
 import { stripeListenerArguments, stripeListenerReady } from '../lib/stripe/api-version.mjs';
 
@@ -15,7 +16,7 @@ if (!['dev', 'start', 'listen'].includes(mode)) throw new Error('Use dev, start,
 process.env.NODE_ENV = mode === 'dev' ? 'development' : 'production';
 loadEnvConfig(projectDir, mode === 'dev');
 const apiKey = process.env.STRIPE_SECRET_KEY || '';
-if (!/^(sk|rk)_test_/.test(apiKey)) throw new Error('Local payment testing requires a Stripe test key.');
+if (!/^(sk|rk|rkcs)_test_/.test(apiKey)) throw new Error('Local payment testing requires a Stripe test key.');
 const baseUrl = new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3002');
 if (baseUrl.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(baseUrl.hostname) || baseUrl.username || baseUrl.password) {
   throw new Error('Local payments must target http://127.0.0.1 or http://localhost.');
@@ -23,9 +24,12 @@ if (baseUrl.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(baseUrl
 const port = baseUrl.port || '80';
 const platformPackage = `@stripe/cli-${process.platform}-${process.arch}`;
 const binary = join(dirname(require.resolve(`${platformPackage}/package.json`)), 'bin', process.platform === 'win32' ? 'stripe.exe' : 'stripe');
-const env = { ...process.env, STRIPE_API_KEY: apiKey, STRIPE_DEVICE_NAME: 'needs-local', NEXT_PUBLIC_APP_URL: baseUrl.origin };
+const env = { ...process.env, STRIPE_API_KEY: apiKey, STRIPE_DEVICE_NAME: 'needs-local', NEXT_PUBLIC_APP_URL: baseUrl.origin,
+  PAYMENTS_WORKER_SECRET: process.env.PAYMENTS_WORKER_SECRET || randomBytes(32).toString('hex'),
+};
 let next;
 let emailWorker;
+let paymentWorker;
 let stopping = false;
 let ready = false;
 function stopChild(child) {
@@ -39,6 +43,7 @@ function stop(code = 0) {
   stopping = true;
   clearTimeout(startupTimeout);
   stopChild(emailWorker);
+  stopChild(paymentWorker);
   stopChild(next);
   stopChild(listener);
   process.exitCode = code;
@@ -51,7 +56,7 @@ const startupTimeout = setTimeout(() => {
   stop(1);
 }, 45_000);
 
-const redact = line => line.replace(/(?:whsec_|(?:sk|rk|pk)_(?:test|live)_)[A-Za-z0-9_]+/g, '[redacted]');
+const redact = line => line.replace(/(?:whsec_|(?:sk|rk|rkcs|pk)_(?:test|live)_)[A-Za-z0-9_]+/g, '[redacted]');
 function receive(line) {
   if (stopping) return;
   let listenerReady;
@@ -73,6 +78,13 @@ function receive(line) {
       });
       next.on('error', () => { console.error('Could not start Needs.'); stop(1); });
       next.on('exit', code => stop(code ?? 1));
+      paymentWorker = spawn(process.execPath, [join(projectDir, 'scripts', 'payments-reconciliation-worker.mjs')], {
+        cwd: projectDir, env, windowsHide: true, stdio: 'inherit',
+      });
+      paymentWorker.on('error', () => { console.error('Could not start payment reconciliation.'); stop(1); });
+      paymentWorker.on('exit', code => {
+        if (!stopping && code) { console.error('Payment reconciliation stopped.'); stop(code); }
+      });
       emailWorker = spawn(process.execPath, [join(projectDir, 'scripts', 'contact-email-worker.mjs')], {
         cwd: projectDir, env, windowsHide: true, stdio: 'inherit',
       });

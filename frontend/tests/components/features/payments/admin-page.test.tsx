@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ fetch: vi.fn(), session: vi.fn(), push: vi.fn(), from: vi.fn(), csrf: vi.fn(), locale: 'en' }))
 vi.mock('@/contexts/i18n-context', () => ({ useI18n: () => ({ locale: mocks.locale, t: (key: string, fallback?: string) => fallback ?? key }) }))
+vi.mock('@/contexts/auth-context', () => ({ useAuth: () => ({ user: { id: 'admin-one' }, isInitialized: true }) }))
 vi.mock('next/navigation', () => { const router = { push: mocks.push }; return { useRouter: () => router } })
 vi.mock('@/lib/supabase/client', () => ({ supabase: { auth: { getSession: mocks.session }, from: mocks.from } }))
 vi.mock('@/lib/utils/csrf', () => ({ withCsrfHeaders: mocks.csrf }))
@@ -75,5 +76,19 @@ describe('Payments admin page', () => {
     mocks.fetch.mockResolvedValueOnce({ ok: false, status: 500 })
     fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Δεν ήταν δυνατή η λήψη του αρχείου πληρωμών.')
+  })
+  it('offers release only on uncollected rows and shows the exact deadline or verified release', async () => {
+    mocks.fetch.mockImplementation(async (url: string) => ({ ok: true, status: 200, json: async () => url.includes('/summary')
+      ? { totals: [], monthly: [], disputes: [] }
+      : { rows: [
+        { id: 'held', amount: 20, currency: 'eur', status: 'requires_capture', created_at: '2026-10-01', authorization_expires_at: '2026-10-28T15:43:21Z' },
+        { id: 'failed', amount: 20, currency: 'eur', status: 'failed', created_at: '2026-10-01' },
+        { id: 'released', amount: 20, currency: 'eur', status: 'failed', created_at: '2026-10-01', stripe_canceled_at: '2026-10-27T12:00:00Z' },
+        { id: 'collected', amount: 20, currency: 'eur', status: 'completed', created_at: '2026-10-01' },
+      ], total: 4 } }))
+    render(<PaymentsAdminPage />)
+    expect(await screen.findAllByRole('button', { name: 'Release authorization' })).toHaveLength(2)
+    expect(document.querySelector('time')).toHaveAttribute('dateTime', '2026-10-28T15:43:21Z')
+    expect(screen.getByText('Stripe confirmed release.')).toBeInTheDocument()
   })
 })

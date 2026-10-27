@@ -25,6 +25,7 @@ jobs:
       - run: npm ci
       - run: npm run test:ci
       - run: npm run test:db
+      - run: npm run test:scripts
       - run: npm audit --omit=dev --audit-level=moderate
   production-browser:
     runs-on: ubuntu-latest
