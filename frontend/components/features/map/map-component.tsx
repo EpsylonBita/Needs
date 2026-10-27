@@ -66,6 +66,8 @@ export function Map({ results, live = false }: MapProps) {
         attributionControl: false,
         interactive: true,
         antialias: true,
+        // Optional performance telemetry is not needed for displaying listings.
+        performanceMetricsCollection: false,
         locale: {
           'Map.Title': t('map.title', 'Listings on the map'),
           'NavigationControl.ZoomIn': t('map.zoomIn', 'Zoom in'),

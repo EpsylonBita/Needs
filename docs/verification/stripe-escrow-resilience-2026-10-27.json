@@ -1,0 +1,132 @@
+{
+  "run": "needs-escrow-resilience-cc8c6e56-80c7-4ff2-95ac-420187dde479",
+  "beganAt": "2026-10-27T11:36:11.136Z",
+  "finishedAt": "2026-10-27T11:56:50.385Z",
+  "platform": "acct_1UUqkiLEgZ0a06x6",
+  "connectedAccount": "acct_1UUyVUL5kmhcKzLl",
+  "origin": "http://localhost:3003",
+  "options": {
+    "chargebacks": true,
+    "idleCycle": true,
+    "browserReview": true
+  },
+  "checks": [
+    {
+      "name": "worker endpoint rejects absent and wrong secrets before fixture writes"
+    },
+    {
+      "name": "real PostgreSQL concurrent claimers reserve four distinct rows; wrong lease cannot finish another worker"
+    },
+    {
+      "name": "two real simultaneous HTTP workers finish four owned holds once, release leases and never capture",
+      "batches": [
+        {
+          "claimed": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        {
+          "claimed": 2,
+          "completed": 2,
+          "failed": 0
+        }
+      ]
+    },
+    {
+      "name": "real PostgreSQL deadline boundaries block confirmation and capture; 24h/1h/expired warnings deduplicate",
+      "naturalProviderExpiry": false,
+      "actualProviderDeadline": "2026-11-03T11:36:16.000Z"
+    },
+    {
+      "name": "simultaneous capture versus cancellation request has one terminal financial result",
+      "captureHttp": 409,
+      "cancelHttp": 200,
+      "providerStatus": "canceled"
+    },
+    {
+      "name": "accepted cancellation versus capture remains exclusively canceled",
+      "captureHttp": 409,
+      "cancelHttp": 200,
+      "providerStatus": "canceled"
+    },
+    {
+      "name": "actual bank dispute won: protected refunds, canonical outcome and duplicate/late event safety",
+      "providerStatus": "won",
+      "missedOpeningRecoveredByWorker": false,
+      "disputeId": "du_1UV8ghLEgZ0a06x6hJVbhT3V"
+    },
+    {
+      "name": "actual bank dispute lost: protected refunds, canonical outcome and duplicate/late event safety",
+      "providerStatus": "lost",
+      "missedOpeningRecoveredByWorker": true,
+      "disputeId": "du_1UV8h4LEgZ0a06x6kAODYUMQ"
+    },
+    {
+      "name": "admin-approved original seller recovery: nonadmin denied, stale preview denied, concurrent execute deduplicates and provider transfer/fee verified",
+      "concurrentHttp": [
+        202,
+        200
+      ],
+      "recoveryId": "f3eb87c3-216f-46b4-86e7-e54f6cbbd00b",
+      "reversalId": "trr_1UV8hRLEgZ0a06x6ZkvQsEs5",
+      "grossAmountMinor": 223,
+      "feeAmountMinor": 11,
+      "sellerNetAmountMinor": 212,
+      "currency": "usd",
+      "originalAmountMinor": 200,
+      "originalCurrency": "eur"
+    },
+    {
+      "name": "real idle worker waits five minutes and wakes to reconcile one due authorization without capture",
+      "elapsedMs": 301777
+    },
+    {
+      "name": "operator signaled completion of the bounded admin browser review",
+      "evidenceSource": "external browser review; see root verification record"
+    }
+  ],
+  "workerBatches": [
+    {
+      "claimed": 2,
+      "completed": 2,
+      "failed": 0
+    },
+    {
+      "claimed": 2,
+      "completed": 2,
+      "failed": 0
+    },
+    {
+      "claimed": 1,
+      "completed": 1,
+      "failed": 0
+    },
+    {
+      "claimed": 1,
+      "completed": 1,
+      "failed": 0
+    },
+    {
+      "claimed": 1,
+      "completed": 1,
+      "failed": 0
+    },
+    {
+      "at": 1793101078033,
+      "claimed": 0,
+      "completed": 0,
+      "failed": 0
+    },
+    {
+      "at": 1793101379810,
+      "claimed": 1,
+      "completed": 1,
+      "failed": 0
+    }
+  ],
+  "limitations": [
+    "Natural Stripe authorization expiry is not fast-forwarded; deadline-boundary checks use only disposable real-Postgres fixture rows."
+  ],
+  "status": "passed-cleaned",
+  "cleanupErrors": []
+}

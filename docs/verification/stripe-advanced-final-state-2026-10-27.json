@@ -1,0 +1,146 @@
+{
+  "protectedNaturalExpiry": {
+    "id": "pi_3UV98JLEgZ0a06x60Cd6e9Ig",
+    "status": "requires_capture",
+    "amountReceived": 0,
+    "captureBefore": 1793707539
+  },
+  "sharedFlagsUnchanged": true,
+  "faultControlsDisabled": true,
+  "checkedAt": "2026-10-27T15:03:43.192Z",
+  "platform": "acct_1UUqkiLEgZ0a06x6",
+  "testMode": true,
+  "status": "passed",
+  "databaseCounts": {
+    "listings": 8,
+    "payments": 0,
+    "milestones": 0,
+    "service_price_agreements": 0,
+    "order_cancellations": 0,
+    "payment_recoveries": 0,
+    "payment_recovery_ledger": 0
+  },
+  "originalEnvironmentUnchanged": true,
+  "payments": [
+    {
+      "id": "pi_3UVBswLEgZ0a06x60NVu2BYa",
+      "status": "succeeded",
+      "amount": 200,
+      "currency": "eur",
+      "settlement": "lost-bank-dispute-seller-transfer-reversed",
+      "transfer": {
+        "id": "tr_3UVBswLEgZ0a06x60XeyN5Xo",
+        "amount": 223,
+        "currency": "usd",
+        "amountReversed": 223
+      },
+      "fee": {
+        "id": "fee_1UVBt3L5kmhcKzLl7qEKwOrw",
+        "amount": 10,
+        "currency": "eur",
+        "amountRefunded": 10
+      },
+      "disputes": [
+        {
+          "id": "du_1UVBt3LEgZ0a06x67DxMYWgR",
+          "status": "lost",
+          "amount": 200,
+          "currency": "eur"
+        }
+      ]
+    },
+    {
+      "id": "pi_3UVBsGLEgZ0a06x605Yxuhgo",
+      "status": "succeeded",
+      "amount": 200,
+      "currency": "eur",
+      "settlement": "customer-fully-refunded",
+      "transfer": {
+        "id": "tr_3UVBsGLEgZ0a06x60OgeSUFn",
+        "amount": 223,
+        "currency": "usd",
+        "amountReversed": 223
+      },
+      "fee": {
+        "id": "fee_1UVBsOL5kmhcKzLlqVwWmEuu",
+        "amount": 10,
+        "currency": "eur",
+        "amountRefunded": 10
+      },
+      "disputes": []
+    },
+    {
+      "id": "pi_3UVBsALEgZ0a06x623it1SAB",
+      "status": "canceled",
+      "amount": 200,
+      "currency": "eur"
+    },
+    {
+      "id": "pi_3UVBrpLEgZ0a06x62XocYZjJ",
+      "status": "succeeded",
+      "amount": 200,
+      "currency": "eur",
+      "settlement": "customer-fully-refunded",
+      "transfer": {
+        "id": "tr_3UVBrpLEgZ0a06x62x2cH6nM",
+        "amount": 223,
+        "currency": "usd",
+        "amountReversed": 223
+      },
+      "fee": {
+        "id": "fee_1UVBryL5kmhcKzLlOmbsOHfL",
+        "amount": 10,
+        "currency": "eur",
+        "amountRefunded": 10
+      },
+      "disputes": []
+    },
+    {
+      "id": "pi_3UVBiRLEgZ0a06x609AzXonx",
+      "status": "succeeded",
+      "amount": 200,
+      "currency": "eur",
+      "settlement": "lost-bank-dispute-seller-transfer-reversed",
+      "transfer": {
+        "id": "tr_3UVBiRLEgZ0a06x600rMrAiE",
+        "amount": 223,
+        "currency": "usd",
+        "amountReversed": 223
+      },
+      "fee": {
+        "id": "fee_1UVBiYL5kmhcKzLlUbAsb4gS",
+        "amount": 10,
+        "currency": "eur",
+        "amountRefunded": 10
+      },
+      "disputes": [
+        {
+          "id": "du_1UVBiZLEgZ0a06x6K3tqf9qF",
+          "status": "lost",
+          "amount": 200,
+          "currency": "eur"
+        }
+      ]
+    },
+    {
+      "id": "pi_3UVBh4LEgZ0a06x62Mu490Hr",
+      "status": "succeeded",
+      "amount": 200,
+      "currency": "eur",
+      "settlement": "customer-fully-refunded",
+      "transfer": {
+        "id": "tr_3UVBh4LEgZ0a06x62O2B0MML",
+        "amount": 223,
+        "currency": "usd",
+        "amountReversed": 223
+      },
+      "fee": {
+        "id": "fee_1UVBhDL5kmhcKzLlk4jTPxnD",
+        "amount": 10,
+        "currency": "eur",
+        "amountRefunded": 10
+      },
+      "disputes": []
+    }
+  ]
+}

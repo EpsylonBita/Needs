@@ -4,7 +4,7 @@ The retained application is `D:\Projects\Active\needs\frontend`. It uses Next.js
 
 ## Start locally
 
-Use Node.js 24.21.0 or newer within the 24.x release line and npm, matching `frontend/package.json`. The reproducible dependency lock is `frontend/package-lock.json`; the older pnpm lockfiles are historical and are not synchronized with these repairs. If using the portable Node runtime, put its directory first in the process PATH so child tools use the same version.
+Use Node.js 24.21.0 or newer within the 24.x release line and npm, matching `frontend/package.json`. Install application dependencies from `frontend/` using `frontend/package-lock.json`; the repository root has no separate Node package. If using the portable Node runtime, put its directory first in the process PATH so child tools use the same version.
 
 ```powershell
 Set-Location D:\Projects\Active\needs\frontend
@@ -109,6 +109,8 @@ npm run build -- --webpack
 
 Next.js and its companion tooling are pinned to 16.4.3; fast-uri is overridden to patched 3.1.9. `npm run test:ci` runs the complete unit/component/API suite. `npm run test:db` covers isolated database migrations; `npm run test:e2e` builds and launches a separate production app on port 3102 using dummy environment values and browser network fixtures. Install its Chromium once with `npx playwright install chromium`. The test build is placed in ignored `.next-e2e/`; no live account, listing or payment is created by this suite.
 
-CI now runs the full suite, database tests, dependency audit, typecheck/lint and desktop/mobile browser journeys. Runtime setup uses Node from `.nvmrc` and npm 11.19.0. The older pnpm examples are superseded.
+CI now runs the full suite, database tests, dependency audit, typecheck/lint and desktop/mobile browser journeys. Runtime setup uses Node from `.nvmrc` and npm 11.19.0. Run application commands from `frontend/`.
+
+The [27 October dependency update](DEPENDENCY_UPGRADE_2026-10-27.md) refreshes the compatible dependencies, removes the unused root Express/Joi package, and extends CI's audit to development dependencies. On this machine, the installed Playwright browsers are in `.tools/playwright-browsers`; set `$env:PLAYWRIGHT_BROWSERS_PATH='D:\Projects\Active\needs\.tools\playwright-browsers'` before `npm run test:e2e` to reuse them. CI installs its own browsers.
 
 Email configuration and final legal documents were explicitly deferred by the owner on 26 October; they are not release-complete. See [current repairs](AUDIT_REPAIRS_2026-10-26.md) for the per-finding disposition and new migration rollout status. The two 26 October migrations were explicitly authorized and applied to the connected NEEDS project; their remote versions are `20261026130307` (atomic rate limits) and `20261026130320` (account privacy requests). See the current report for local-to-remote mapping and verification. Historical applied-migration tables above cover earlier rollout batches only.

@@ -4,7 +4,7 @@ import { POST as RefundPOST } from '../../../../app/api/payments/disputes/[id]/r
 import { POST as ResolvePOST } from '../../../../app/api/payments/disputes/[id]/resolve/route'
 
 vi.mock('@/lib/auth/admin', () => ({
-  requireAdmin: vi.fn(async (req: any) => ({ allowed: true, user: { email: 'admin@test' } }))
+  requireAdmin: vi.fn(async (req: any) => ({ allowed: true, user: { id: 'admin-user', email: 'admin@test' } }))
 }))
 
 vi.mock('@/lib/utils/rate-limit-enhanced', () => ({
@@ -14,7 +14,7 @@ vi.mock('@/lib/utils/rate-limit-enhanced', () => ({
 
 vi.mock('@/lib/supabase/server', () => ({
   supabaseAdmin: {
-    rpc: vi.fn(async () => ({ data: null, error: null })),
+    rpc: vi.fn(async (name: string) => ({ data: name === 'reserve_admin_payment_refund' ? 'refund-claim' : null, error: null })),
     from: vi.fn((table: string) => {
       const chain: any = {
         select: vi.fn().mockReturnThis(),
@@ -56,7 +56,17 @@ describe('Admin Dispute Routes Success', () => {
     expect(data.success).toBe(true)
     const { stripe } = await import('@/lib/stripe/server')
     expect(stripe.refunds.create).toHaveBeenCalledWith({ payment_intent: 'pi_1', reverse_transfer: true, refund_application_fee: true }, { idempotencyKey: 'refund:pi_1' })
+    const { supabaseAdmin } = await import('@/lib/supabase/server')
+    expect(supabaseAdmin.rpc).toHaveBeenCalledWith('reserve_admin_payment_refund', { p_payment_id: 'pay-1', p_admin_user_id: 'admin-user' })
     expect(res.headers.get('X-Request-Id')).toBeTruthy()
+  })
+
+  it('never submits a customer refund when a seller recovery already reserved the payment', async () => {
+    const { supabaseAdmin } = await import('@/lib/supabase/server')
+    const { stripe } = await import('@/lib/stripe/server')
+    vi.mocked(supabaseAdmin.rpc).mockResolvedValueOnce({ data: null, error: { code: '23514', message: 'recovery approved' } } as any)
+    const response = await RefundPOST(new NextRequest('http://localhost/api/payments/disputes/1/refund', { method: 'POST' }))
+    expect(response.status).toBe(409); expect(stripe.refunds.create).not.toHaveBeenCalled()
   })
 
   it('resolve returns success with X-Request-Id', async () => {

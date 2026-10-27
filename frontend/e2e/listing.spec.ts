@@ -55,6 +55,8 @@ async function signedInListing(page: Page) {
   await login.getByLabel('Password', { exact: true }).fill('Local-fixture-only-123!');
   await login.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'New listing' })).toBeVisible();
+  expect(await page.getByText('Login successful', { exact: true }).count()).toBe(0);
+  expect(await page.getByText('You have been logged in successfully.', { exact: true }).count()).toBe(0);
 }
 
 async function fillDraft(page: Page) {
@@ -96,7 +98,12 @@ test('extracts the reported Greek phone discount and hourly care service', async
   await page.getByLabel('Price (€)', { exact: true }).fill('12');
   await expect(page.getByRole('button', { name: '12€/hour', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Publish listing', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: 'New listing' })).toHaveCount(0);
+  const confirmation = page.getByRole('dialog', { name: 'Your listing is published!' });
+  await expect(confirmation).toBeVisible();
+  await expect(confirmation.getByRole('link', { name: 'View listing' })).toHaveAttribute('href', `/listings/${listingId}`);
+  await expect(confirmation.getByRole('button', { name: 'Publish listing' })).toHaveCount(0);
+  await confirmation.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(confirmation).toHaveCount(0);
   expect(backend.writes).toHaveLength(1);
   expect(backend.writes[0]).toMatchObject({ price: 12, description: 'μπορω να αναλαβω  ηλικιωμενους κατοικον με 10 ευρω την ωρα' });
   expect(backend.tagWrites.flat().map(value => value.tag)).toContain('12€/hour');
@@ -117,7 +124,12 @@ test('sign in, optional photo preview, smart draft and successful publication', 
   await expect(page.getByRole('button', { name: '100€', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('button', { name: '120€', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Publish listing', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: 'New listing' })).toHaveCount(0);
+  const confirmation = page.getByRole('dialog', { name: 'Your listing is published!' });
+  await expect(confirmation).toBeVisible();
+  await expect(confirmation.getByRole('link', { name: 'View listing' })).toHaveAttribute('href', `/listings/${listingId}`);
+  await expect(confirmation.getByRole('button', { name: 'Publish listing' })).toHaveCount(0);
+  await confirmation.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(confirmation).toHaveCount(0);
   expect(backend.writes).toHaveLength(1);
   expect(backend.writes[0]).toMatchObject({ title: 'Trek used', price: 100, contact_number: '+306991234567', address: { label: 'Athens, Attica, Greece' } });
   expect(backend.tagWrites.flat().map(value => value.tag)).toEqual(expect.arrayContaining(['trek', 'used', 'Athens', '100€']));
@@ -134,7 +146,33 @@ test('failed save preserves the draft and a cleared phone through retry', async 
   await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Trek used');
   await expect(page.getByLabel('Phone (optional)', { exact: true })).toHaveValue('');
   await page.getByRole('button', { name: 'Publish listing', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: 'New listing' })).toHaveCount(0);
+  const confirmation = page.getByRole('dialog', { name: 'Your listing is published!' });
+  await expect(confirmation).toBeVisible();
+  await expect(confirmation.getByRole('link', { name: 'View listing' })).toHaveAttribute('href', `/listings/${listingId}`);
+  await expect(confirmation.getByRole('button', { name: 'Publish listing' })).toHaveCount(0);
+  await confirmation.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(confirmation).toHaveCount(0);
   expect(backend.writes).toHaveLength(2);
   expect(backend.writes[1].contact_number).toBe('');
+});
+
+test('price marker updates without transitions when reduced motion is enabled', async ({ page }) => {
+  const backend = await fixtureBackend(page);
+  await page.route('**/api/csrf', route => route.fulfill({ json: { csrfToken: 'pricing-fixture-csrf', expiresIn: 3600 } }));
+  await page.route('**/api/pricing/guidance', route => route.fulfill({ json: {
+    status: 'ready', range: { low: 90, median: 110, high: 130 }, sampleSize: 6,
+    basis: 'needs_asking', unit: 'item', retailRange: null,
+  } }));
+  await signedInListing(page);
+  await fillDraft(page);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.getByRole('button', { name: 'Check price', exact: true }).click();
+  const meter = page.getByRole('meter', { name: 'Price comparison' });
+  await expect(meter).toBeVisible();
+  await page.getByLabel('Price (€)', { exact: true }).fill('200');
+  await expect(meter).toHaveAttribute('aria-valuenow', '4');
+  const marker = meter.locator('svg');
+  await expect(marker).toHaveCSS('transition-property', 'none');
+  expect(await marker.evaluate(element => element.getAnimations().length)).toBe(0);
+  expect(backend.writes).toHaveLength(0);
 });

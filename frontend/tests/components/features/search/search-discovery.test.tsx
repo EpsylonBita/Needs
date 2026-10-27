@@ -118,7 +118,8 @@ describe('Listing discovery', () => {
   it('loads a detail record and returns signed-out visitors to that listing conversation after login', async () => {
     render(<ListingDetail id="123e4567-e89b-12d3-a456-426614174000" />);
     await screen.findByRole('heading', { name: 'Oak desk' });
-    expect(new URL(request.mock.calls.at(-1)![0], 'http://localhost').searchParams.get('listingId')).toBe('123e4567-e89b-12d3-a456-426614174000');
+    const detailRequest = request.mock.calls.find(([url]) => new URL(url, 'http://localhost').pathname === '/api/search');
+    expect(new URL(detailRequest![0], 'http://localhost').searchParams.get('listingId')).toBe('123e4567-e89b-12d3-a456-426614174000');
     expect(screen.getByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/login?redirectTo=%2Fchat%3Flisting%3Dlisting-1');
   });
 

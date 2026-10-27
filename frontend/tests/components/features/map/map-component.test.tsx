@@ -97,6 +97,7 @@ describe('map interaction and accessibility', () => {
   it('starts at Athens with zoom controls and requests location only from the explicit locate button', async () => {
     render(<ListingMap results={[]} />);
     expect(state.maps[0].options.center).toEqual([23.7275, 37.9838]);
+    expect(state.maps[0].options.performanceMetricsCollection).toBe(false);
     expect(state.maps[0].controls.map((control: any) => control.kind)).toEqual(['attribution', 'navigation', 'locate']);
     expect(state.getCurrentPosition).not.toHaveBeenCalled();
     expect(state.controls[0].options.trackUserLocation).toBe(false);

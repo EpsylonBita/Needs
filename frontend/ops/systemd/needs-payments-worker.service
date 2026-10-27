@@ -1,0 +1,34 @@
+[Unit]
+Description=NEEDS payment reconciliation worker
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=needs-payments
+Group=needs-payments
+WorkingDirectory=/srv/needs/frontend
+EnvironmentFile=/etc/needs/payments-worker.env
+Environment=PAYMENTS_WORKER_HEALTH_FILE=/run/needs-payments/health.json
+ExecStart=/usr/bin/node /srv/needs/frontend/scripts/payments-reconciliation-worker.mjs
+Restart=on-failure
+RestartSec=15s
+TimeoutStopSec=15s
+RuntimeDirectory=needs-payments
+RuntimeDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/run/needs-payments
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

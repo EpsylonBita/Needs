@@ -99,7 +99,7 @@ describe('Create listing location state and persistence', () => {
     expect(boundary.create.mock.calls[0][0].tags).not.toContain('Athens');
   });
 
-  it('refreshes only the creating account overview after a successful listing save closes', async () => {
+  it('refreshes only the creating account overview and keeps confirmation until dismissed', async () => {
     let finish!: (result: { id: string }) => void;
     boundary.create.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
     const { client, close } = await fillListing();
@@ -110,8 +110,34 @@ describe('Create listing location state and persistence', () => {
     expect(boundary.overview).not.toHaveBeenCalled();
     await act(async () => finish({ id: 'created-listing' }));
     await waitFor(() => expect(screen.getByTestId('overview-count')).toHaveTextContent('1'));
+    expect(close).not.toHaveBeenCalled();
+    expect(screen.getByText('Your listing is published!').closest('[role="status"]')).toHaveTextContent('Your listing is published!');
+    expect(screen.getByText('Your listing is published!').closest('[role="status"]')).toHaveFocus();
+    expect(screen.getByRole('link', { name: 'View listing' })).toHaveAttribute('href', '/listings/created-listing');
+    expect(screen.queryByRole('button', { name: 'Publish listing' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     expect(close).toHaveBeenCalledWith(false);
     expect(client.getQueryState(['profile-overview', 'other-account'])?.isInvalidated).toBe(false);
+  });
+
+  it('waits for photo upload before confirming publication and blocks duplicate submissions', async () => {
+    let finishUpload!: () => void;
+    boundary.upload.mockReturnValueOnce(new Promise<void>(resolve => { finishUpload = resolve; }));
+    const { close } = await fillListing(true);
+    publish();
+    await waitFor(() => expect(boundary.upload).toHaveBeenCalled());
+    expect(screen.queryByText('Your listing is published!')).not.toBeInTheDocument();
+    const pending = screen.getByRole('button', { name: 'Publishing…' });
+    expect(pending).toBeDisabled();
+    await act(async () => { fireEvent.submit(pending.closest('form')!); });
+    expect(boundary.create).toHaveBeenCalledOnce();
+    expect(close).not.toHaveBeenCalled();
+    await act(async () => finishUpload());
+    expect(screen.getByText('Your listing is published!').closest('[role="status"]')).toHaveTextContent('Your listing is published!');
+    expect(screen.queryByRole('textbox', { name: 'What would you like to list?' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View listing' })).toHaveAttribute('href', '/listings/created-listing');
+    expect(boundary.create).toHaveBeenCalledOnce();
+    expect(close).not.toHaveBeenCalled();
   });
 
   it('refreshes the overview and prevents duplicate publication when image upload and rollback fail', async () => {
@@ -121,6 +147,7 @@ describe('Create listing location state and persistence', () => {
     publish();
     await screen.findByText(/Your listing created-listing is saved in My Listings/);
     await waitFor(() => expect(screen.getByTestId('overview-count')).toHaveTextContent('1'));
+    expect(screen.queryByText('Your listing is published!')).not.toBeInTheDocument();
     expect(boundary.remove).toHaveBeenCalledWith('created-listing');
     expect(close).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Publish listing' })).toBeDisabled();
@@ -132,6 +159,7 @@ describe('Create listing location state and persistence', () => {
     const { close } = await fillListing(true);
     publish();
     await screen.findByText('Failed to create ad: Storage unavailable');
+    expect(screen.queryByText('Your listing is published!')).not.toBeInTheDocument();
     expect(boundary.remove).toHaveBeenCalledWith('created-listing');
     expect(boundary.overview).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Publish listing' })).toBeEnabled();
@@ -144,6 +172,7 @@ describe('Create listing location state and persistence', () => {
     await fillListing();
     publish();
     await screen.findByText('Failed to create ad: Listing unavailable');
+    expect(screen.queryByText('Your listing is published!')).not.toBeInTheDocument();
     expect(screen.getByTestId('overview-count')).toHaveTextContent('0');
     expect(boundary.overview).not.toHaveBeenCalled();
   });

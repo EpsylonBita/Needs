@@ -36,9 +36,22 @@ export const GET = withApiErrorHandler(async (request: NextRequest) => {
   const { data: disputes, error } = await supabaseAdmin.from('disputes')
     .select('id,status,reason,payment_id').order('created_at', { ascending: false }).limit(1000)
   if (error) throw ErrorFactory.database('Disputes could not be loaded')
+  // These are global administrator counts. Browser RLS intentionally hides
+  // other participants' disputes/transactions, even for an administrator.
+  const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+  const counts = await Promise.all([
+    supabaseAdmin.from('listings').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+    supabaseAdmin.from('profiles').select('id', { count: 'exact', head: true }).gte('created_at', since),
+    supabaseAdmin.from('disputes').select('id', { count: 'exact', head: true }).eq('status', 'open'),
+    supabaseAdmin.from('transactions').select('id', { count: 'exact', head: true }).eq('type', 'transfer').eq('status', 'created'),
+  ])
+  if (counts.some(result => result.error || !Number.isSafeInteger(result.count) || (result.count ?? -1) < 0)) {
+    throw ErrorFactory.database('Overview counts could not be loaded')
+  }
   return NextResponse.json({
     totals: [...totals.values()].sort((a, b) => a.currency.localeCompare(b.currency)),
     monthly: [...monthly.values()].sort((a, b) => a.month.localeCompare(b.month) || a.currency.localeCompare(b.currency)),
     disputes: disputes || [],
+    overview: { activeListings: counts[0].count, newUsers: counts[1].count, openDisputes: counts[2].count, recordedTransfers: counts[3].count },
   }, { headers: { 'Cache-Control': 'private, no-store' } })
 })

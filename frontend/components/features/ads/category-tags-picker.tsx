@@ -53,7 +53,7 @@ export function CategoryTagsPicker({ selectedCategory, selectedSubcategory, sele
   const cleanDraft = tagDraft.trim();
   const canAdd = !!onAddTag && cleanDraft.length > 0 && cleanDraft.length <= 50 && selectedTags.length < 20
     && !selectedTags.some(tag => tag.toLocaleLowerCase() === cleanDraft.toLocaleLowerCase());
-  const selectClass = 'h-12 w-full rounded-xl border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60';
+  const selectClass = 'h-11 w-full rounded-xl border border-input bg-background px-3 text-base sm:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60';
 
   function addTag() {
     if (!canAdd || !onAddTag) return;
@@ -61,9 +61,9 @@ export function CategoryTagsPicker({ selectedCategory, selectedSubcategory, sele
     setTagDraft('');
   }
 
-  return <div className="space-y-5">
+  return <div className="space-y-4">
     <div className="grid gap-4 sm:grid-cols-2">
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <Label htmlFor={`${id}-category`}>{copy.category}</Label>
         <select id={`${id}-category`} value={category ? selectedCategory : ''} onChange={event => onCategorySelect(event.target.value)}
           aria-invalid={!!categoryError} aria-describedby={categoryError ? `${id}-category-error` : undefined} className={selectClass}>
@@ -72,7 +72,7 @@ export function CategoryTagsPicker({ selectedCategory, selectedSubcategory, sele
         </select>
         {categoryError && <p id={`${id}-category-error`} role="alert" className="text-sm text-destructive">{categoryError}</p>}
       </div>
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <Label htmlFor={`${id}-direction`}>{copy.direction}</Label>
         <select id={`${id}-direction`} value={category?.subcategories.includes(selectedSubcategory) ? selectedSubcategory : ''} disabled={!category}
           onChange={event => onSubcategorySelect(event.target.value)} aria-invalid={!!subcategoryError}
@@ -86,25 +86,25 @@ export function CategoryTagsPicker({ selectedCategory, selectedSubcategory, sele
 
     {children}
 
-    <section aria-labelledby={`${id}-tags-heading`} aria-describedby={`${id}-tags-help`} className="rounded-2xl border border-border bg-muted/30 p-4">
+    <section aria-labelledby={`${id}-tags-heading`} aria-describedby={`${id}-tags-help`} className="border-t border-border pt-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 id={`${id}-tags-heading`} className="flex items-center gap-2 text-sm font-semibold"><Sparkles size={16} className="text-primary" aria-hidden="true" />{copy.tags}</h3>
         <span className="text-xs text-muted-foreground" aria-live="polite">{selectedTags.length}/20 {copy.selected}</span>
       </div>
-      <p id={`${id}-tags-help`} className="mt-2 text-sm leading-relaxed text-muted-foreground">{copy.help}</p>
+      <p id={`${id}-tags-help`} className="mt-1.5 text-xs leading-5 text-muted-foreground">{copy.help}</p>
       {isLoadingTags && <p role="status" className="mt-3 text-sm text-muted-foreground">{copy.loading}</p>}
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-2 flex flex-wrap gap-1.5">
         {tags.map(tag => {
           const selected = selectedTags.includes(tag);
           return <button key={tag} type="button" aria-pressed={selected} disabled={!selected && (selectedTags.length >= 20 || tag.length > 50)}
-            onClick={() => onToggleTag(tag)} className={cn('inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full border px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+            onClick={() => onToggleTag(tag)} className={cn('inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full border px-2.5 py-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
               selected ? 'border-primary/25 bg-primary/10 text-primary hover:bg-primary/15' : 'border-border bg-background text-muted-foreground hover:bg-accent')}>
             <span className="break-words">{tag}</span>{selected ? <Check size={14} className="shrink-0" aria-hidden="true" /> : <Plus size={14} className="shrink-0" aria-hidden="true" />}
           </button>;
         })}
         {!tags.length && !isLoadingTags && <p className="text-sm text-muted-foreground">{copy.empty}</p>}
       </div>
-      {onAddTag && <details className="mt-3 border-t border-border pt-1">
+      {onAddTag && <details className="mt-1">
         <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-lg text-sm font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><Plus size={15} aria-hidden="true" />{copy.edit}</summary>
         <div className="space-y-2 pb-1 pt-1">
         <Label htmlFor={`${id}-new-tag`}>{copy.custom}</Label>
@@ -112,7 +112,7 @@ export function CategoryTagsPicker({ selectedCategory, selectedSubcategory, sele
           <Input id={`${id}-new-tag`} value={tagDraft} maxLength={50} placeholder={copy.placeholder} aria-describedby={`${id}-tag-limit`}
             onChange={event => setTagDraft(event.target.value)} onKeyDown={event => {
               if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); addTag(); }
-            }} className="h-11 min-w-0 rounded-xl bg-background" />
+            }} className="h-11 min-w-0 rounded-xl bg-background text-base shadow-none" />
           <Button type="button" variant="outline" onClick={addTag} disabled={!canAdd} className="h-11 shrink-0 rounded-xl">{copy.add}</Button>
         </div>
         <p id={`${id}-tag-limit`} className="text-xs text-muted-foreground">{copy.limit}</p>

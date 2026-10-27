@@ -1,4 +1,5 @@
 import { getProviderPayment, lifecycleRpc, reconcilePayment, releaseClaimedPayment } from './lifecycle'
+import { resumeApprovedRecovery } from './recovery'
 
 type ReconciliationLease = { payment_id: string; intent_id: string; lease_id: string }
 
@@ -22,7 +23,13 @@ export async function reconcilePaymentBatch() {
             claim_id: payment.cancel_claim_id, status: 'claimed',
           }, lease.lease_id)
           if (outcome.pending) errorCode = 'cancellation_pending'
-        } else await reconcilePayment(payment, lease.lease_id)
+        } else {
+          await reconcilePayment(payment, lease.lease_id)
+          // No new authority is created here: only an existing administrator
+          // approval can retry its original transfer and stable idempotency key.
+          const recovery = await resumeApprovedRecovery(payment.id, lease.lease_id)
+          if (recovery.pending || recovery.recovery?.status === 'review_required') errorCode = 'seller_recovery_pending'
+        }
       } catch { errorCode = 'provider_reconciliation_failed' }
       try {
         const finished = await lifecycleRpc('finish_order_reconciliation', {

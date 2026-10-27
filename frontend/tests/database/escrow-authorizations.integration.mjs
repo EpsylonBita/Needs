@@ -97,6 +97,12 @@ before(async () => {
   await db.exec(await read(migration))
   await db.exec(await read(accessMigration))
   await db.exec(await read('migrations/20261026232843_escrow_authorization_lifecycle.sql'))
+  await db.exec(await read('migrations/20261027104647_escrow_dispute_canonical_corrections.sql'))
+  await db.exec(await read('migrations/20261027105222_escrow_admin_approved_recovery.sql'))
+  await db.exec(await read('migrations/20261027111542_escrow_recovery_settlement_currency.sql'))
+  await db.exec(await read('migrations/20261027113829_payment_transaction_currencies.sql'))
+  await db.exec(await read('migrations/20261027145521_escrow_capture_webhook_claim_resolution.sql'))
+  await db.exec(await read('migrations/20261027145611_preserve_financial_review_attention.sql'))
 })
 after(async () => { await db.close() })
 
@@ -142,12 +148,67 @@ async function both(p) { await confirmOrder(p); await confirmOrder(p, authUser(p
 const refund = (id, status, amount = 4000) => ({ id, status, amount, currency: 'eur' })
 const refunds = (p, rows, readTime = observed()) => rpc('reconcile_order_refunds($1,$2,$3,$4::jsonb)', [p.id, p.intent, readTime, JSON.stringify(rows)])
 const webhook = (p, type, obj = {}) => rpc('process_stripe_webhook_event($1::jsonb,$2,$3)', [JSON.stringify({
-  id: `evt_${randomUUID()}`, type, created: Math.floor(Date.now() / 1000), data: { object: { id: p.intent, amount: 4000, application_fee_amount: 200, amount_capturable: 4000, ...obj } },
+  id: `evt_${randomUUID()}`, type, created: Math.floor(Date.now() / 1000), data: { object: {
+    id: p.intent, amount: 4000, application_fee_amount: 200, currency: 'eur', capture_method: 'manual',
+    status: type === 'payment_intent.succeeded' ? 'succeeded' : 'requires_capture',
+    amount_received: type === 'payment_intent.succeeded' ? 4000 : 0,
+    amount_capturable: type === 'payment_intent.succeeded' ? 0 : 4000,
+    metadata: { listing_id: p.listing, buyer_profile_id: p.buyer, seller_profile_id: p.seller }, ...obj,
+  } },
 }), p.intent, null])
+
+test('transactions preserve original charge/refund units and exact destination-transfer currency', async () => {
+  const p = await fixed()
+  await snapshot(p, 'succeeded')
+  await refunds(p, [refund(`re_${randomUUID().replaceAll('-', '')}`, 'succeeded', 1000)])
+  await webhook(p, 'transfer.created', { id: `tr_${randomUUID()}`, amount: 4460, currency: 'usd' })
+  const rows = (await db.query('select type,amount,currency,status from transactions where payment_id=$1 order by type', [p.id])).rows
+  assert.deepEqual(rows, [
+    { type: 'charge', amount: '40.00', currency: 'eur', status: 'succeeded' },
+    { type: 'refund', amount: '10.00', currency: 'eur', status: 'succeeded' },
+    { type: 'transfer', amount: '44.60', currency: 'usd', status: 'created' },
+  ])
+  const canceled = await fixed()
+  await webhook(canceled, 'payment_intent.canceled', { currency: 'eur' })
+  assert.deepEqual((await db.query('select amount,currency,status from transactions where payment_id=$1', [canceled.id])).rows,
+    [{ amount: '40.00', currency: 'eur', status: 'failed' }])
+  const access = (await db.query("select has_function_privilege('anon','needs_private.set_transaction_currency()','EXECUTE') a,has_function_privilege('authenticated','needs_private.set_transaction_currency()','EXECUTE') u,has_function_privilege('service_role','needs_private.set_transaction_currency()','EXECUTE') s")).rows[0]
+  assert.deepEqual(access, { a: false, u: false, s: false })
+})
+
+test('legacy currency backfill requires the exact event, object, amount and payment binding', async () => {
+  const p = await fixed(), eventId = `evt_${randomUUID()}`, transfer = `tr_${randomUUID()}`
+  const event = { id: eventId, type: 'transfer.created', data: { object: { id: transfer, amount: 4460, currency: 'usd' } } }
+  await db.query("insert into webhook_events(id,source,event_type,payload) values($1,'stripe','transfer.created',$2::jsonb)", [eventId, JSON.stringify(event)])
+  await db.exec('alter table transactions disable trigger set_transaction_currency')
+  const rows = []
+  for (const [metadata, amount] of [
+    [{ stripe_event_id: eventId, stripe_object_id: transfer, stripe_payment_intent_id: p.intent }, 44.6],
+    [{ stripe_event_id: eventId, stripe_object_id: 'tr_other', stripe_payment_intent_id: p.intent }, 44.6],
+    [{ stripe_event_id: 'evt_missing', stripe_object_id: transfer, stripe_payment_intent_id: p.intent }, 44.6],
+    [{ stripe_event_id: eventId, stripe_object_id: transfer, stripe_payment_intent_id: 'pi_other' }, 44.6],
+    [{ stripe_event_id: eventId, stripe_object_id: transfer, stripe_payment_intent_id: p.intent }, 99],
+  ]) {
+    rows.push((await db.query("insert into transactions(payment_id,type,amount,status,metadata) values($1,'transfer',$2,'created',$3::jsonb) returning id", [p.id, amount, JSON.stringify(metadata)])).rows[0].id)
+  }
+  await db.exec('alter table transactions enable trigger set_transaction_currency')
+  const before = (await db.query('select id,amount,status from transactions where payment_id=$1 order by id', [p.id])).rows
+  await db.exec(await read('migrations/20261027113829_payment_transaction_currencies.sql'))
+  for (let i = 0; i < rows.length; i++) assert.equal((await db.query('select currency from transactions where id=$1', [rows[i]])).rows[0].currency, i === 0 ? 'usd' : null)
+  assert.deepEqual((await db.query('select id,amount,status from transactions where payment_id=$1 order by id', [p.id])).rows, before)
+  await db.query('update transactions set amount=99 where id=$1', [rows[0]])
+  assert.equal((await db.query('select currency from transactions where id=$1', [rows[0]])).rows[0].currency, null, 'amount-only changes invalidate the original transfer evidence')
+  await db.query("update webhook_events set payload=jsonb_set(payload,'{data,object,currency}','\"invalid\"'::jsonb) where id=$1", [eventId])
+  const invalid = (await db.query("insert into transactions(payment_id,type,amount,status,metadata,currency) values($1,'transfer',44.60,'created',$2::jsonb,'eur') returning currency", [p.id, JSON.stringify({ stripe_event_id: eventId, stripe_object_id: transfer, stripe_payment_intent_id: p.intent })])).rows[0]
+  assert.equal(invalid.currency, null, 'caller-provided parent currency cannot replace missing provider evidence')
+  await db.query("update webhook_events set payload=jsonb_set(payload,'{data,object,amount}','\"unavailable\"'::jsonb) where id=$1", [eventId])
+  await db.exec(await read('migrations/20261027113829_payment_transaction_currencies.sql'))
+  assert.equal((await db.query('select currency from transactions where id=$1', [rows[1]])).rows[0].currency, null, 'malformed legacy evidence stays unknown without aborting the backfill')
+})
 
 test('actual migration is service-only and cancellation history has no browser grants', async () => {
   const p = await fixed()
-  const functions = ['request_order_cancellation', 'respond_order_cancellation', 'claim_order_cancellation', 'claim_admin_order_cancellation', 'reconcile_order_provider', 'reconcile_order_refunds', 'reconcile_order_disputes', 'claim_order_reconciliation', 'finish_order_reconciliation', 'get_order_for_user']
+  const functions = ['request_order_cancellation', 'respond_order_cancellation', 'claim_order_cancellation', 'claim_admin_order_cancellation', 'reconcile_order_provider', 'reconcile_order_refunds', 'reconcile_order_disputes', 'process_stripe_dispute_event', 'claim_order_reconciliation', 'finish_order_reconciliation', 'get_order_for_user']
   for (const name of functions) {
     const permissions = (await db.query(`select has_function_privilege('anon',oid,'EXECUTE') a,has_function_privilege('authenticated',oid,'EXECUTE') u,has_function_privilege('service_role',oid,'EXECUTE') s from pg_proc where proname=$1`, [name])).rows
     assert.equal(permissions.length, 1)
@@ -494,6 +555,95 @@ test('missing bank-dispute webhooks are recovered with monotonic snapshots and t
   const rows = (await db.query('select status from disputes where payment_id=$1 and stripe_dispute_id=$2', [p.id, id])).rows
   assert.deepEqual(rows, [{ status: 'won' }])
   assert.equal(await count("select count(*) n from notifications where payload->>'payment_id'=$1 and type in('dispute_opened','dispute_resolved')", [p.id]), 4)
+})
+
+test('a newer authoritative late win corrects a lost dispute without erasing history or settlement attention', async () => {
+  const p = await fixed()
+  await both(p); await snapshot(p, 'succeeded')
+  const id = `du_${randomUUID().replaceAll('-', '')}`, lostRead = observed()
+  await disputeSnapshot(p, [bankDispute(id, 'lost')], lostRead)
+  assert.equal((await getPayment(p.id)).status, 'refunded')
+  assert.deepEqual(await disputeSnapshot(p, [bankDispute(id, 'won')], lostRead), { applied: false })
+  await disputeSnapshot(p, [bankDispute(id, 'won')])
+  let row = await getPayment(p.id)
+  assert.equal(row.status, 'completed')
+  assert.equal(row.refunded_at, null)
+  assert.equal(row.attention_required, true, 'A changed bank outcome requires settlement review, not another automatic transfer.')
+  await disputeSnapshot(p, [bankDispute(id, 'won')])
+  await disputeSnapshot(p, [bankDispute(id, 'lost')])
+  await disputeSnapshot(p, [bankDispute(id, 'under_review')])
+  await webhook(p, 'charge.dispute.closed', { id, status: 'lost' })
+  row = await getPayment(p.id)
+  assert.equal(row.status, 'completed')
+  assert.equal((await db.query('select status from disputes where stripe_dispute_id=$1', [id])).rows[0].status, 'won')
+  assert.equal(await count("select count(*) n from payment_audit_logs where payment_id=$1 and action='dispute_resolved'", [p.id]), 2)
+  assert.equal(await count("select count(*) n from payment_audit_logs where payment_id=$1 and metadata->>'prior_status'='lost' and metadata->>'provider_status'='won'", [p.id]), 1)
+  assert.equal(await count("select count(*) n from notifications where payload->>'payment_id'=$1 and type='dispute_resolved'", [p.id]), 4)
+  assert.equal(await count("select count(*) n from notifications where payload->>'payment_id'=$1 and payload->>'reason_code'='bank_dispute_late_win_settlement_review'", [p.id]), 2)
+})
+
+test('a late win preserves actual refunds and other open or lost bank cases', async () => {
+  for (const remaining of ['refund', 'open', 'lost']) {
+    const p = await fixed()
+    await both(p); await snapshot(p, 'succeeded')
+    const id = `du_${randomUUID().replaceAll('-', '')}`, otherId = `du_${randomUUID().replaceAll('-', '')}`
+    const other = remaining === 'refund' ? [] : [bankDispute(otherId, remaining === 'open' ? 'needs_response' : 'lost')]
+    await disputeSnapshot(p, [bankDispute(id, 'lost'), ...other])
+    if (remaining === 'refund') await refunds(p, [refund(`re_${randomUUID().replaceAll('-', '')}`, 'succeeded')])
+    await disputeSnapshot(p, [bankDispute(id, 'won'), ...other])
+    assert.equal((await getPayment(p.id)).status, remaining === 'open' ? 'disputed' : 'refunded')
+    assert.equal((await db.query('select status from disputes where stripe_dispute_id=$1', [id])).rows[0].status, 'won')
+  }
+})
+
+test('late wins preserve the separate local complaint and its existing attention flag', async () => {
+  const p = await fixed()
+  await both(p); await snapshot(p, 'succeeded')
+  const local = await complaint(p), id = `du_${randomUUID().replaceAll('-', '')}`
+  await disputeSnapshot(p, [bankDispute(id, 'lost')])
+  assert.equal((await db.query('select status from disputes where id=$1', [local.dispute_id])).rows[0].status, 'open')
+  await db.query('update payments set attention_required=true where id=$1', [p.id])
+  await disputeSnapshot(p, [bankDispute(id, 'won')])
+  assert.equal((await db.query('select status from disputes where id=$1', [local.dispute_id])).rows[0].status, 'open')
+  assert.equal((await getPayment(p.id)).attention_required, true)
+})
+
+test('canonical dispute webhooks apply current late-win truth atomically and deduplicate event retries', async () => {
+  const p = await fixed()
+  await both(p); await snapshot(p, 'succeeded')
+  const id = `du_${randomUUID().replaceAll('-', '')}`
+  await disputeSnapshot(p, [bankDispute(id, 'lost')])
+  const event = { id: `evt_${randomUUID()}`, type: 'charge.dispute.updated', data: { object: { id, status: 'lost' } } }
+  const deliver = (payload = event, records = [bankDispute(id, 'won')], read = observed()) => rpc(
+    'process_stripe_dispute_event($1::jsonb,$2,$3,$4::jsonb,$5)', [JSON.stringify(payload), p.intent, read, JSON.stringify(records), 'request-fixture'],
+  )
+  assert.equal((await deliver()).applied, true)
+  assert.equal((await getPayment(p.id)).status, 'completed')
+  assert.deepEqual(await deliver(), { duplicate: true, action: 'already_processed' })
+  assert.equal(await count("select count(*) n from notifications where payload->>'payment_id'=$1 and type='dispute_resolved'", [p.id]), 4)
+  const marker = (await db.query('select processed_at,processing_result from webhook_events where id=$1', [event.id])).rows[0]
+  assert.ok(marker.processed_at)
+  assert.equal(marker.processing_result.action, 'dispute_reconciled')
+  const invalid = { ...event, id: `evt_${randomUUID()}` }
+  await assert.rejects(deliver(invalid, [{ ...bankDispute(id, 'won'), amount: -1 }]), /Invalid canonical/)
+  assert.equal(await count('select count(*) n from webhook_events where id=$1', [invalid.id]), 0)
+  assert.equal((await getPayment(p.id)).status, 'completed')
+  await assert.rejects(deliver({ ...event, id: `evt_${randomUUID()}` }, []), /missing from canonical/)
+})
+
+test('canonical webhook snapshots preserve newer state and repair an older legacy ignored late-win event', async () => {
+  const p = await fixed()
+  await both(p); await snapshot(p, 'succeeded')
+  const id = `du_${randomUUID().replaceAll('-', '')}`, beforeLoss = observed()
+  await disputeSnapshot(p, [bankDispute(id, 'lost')])
+  const event = { id: `evt_${randomUUID()}`, type: 'charge.dispute.closed', data: { object: { id, status: 'won' } } }
+  await rpc('process_stripe_webhook_event($1::jsonb,$2,$3)', [JSON.stringify(event), p.intent, null])
+  assert.equal((await getPayment(p.id)).status, 'refunded', 'The old event-only processor ignores a terminal correction.')
+  const deliver = (payload, read) => rpc('process_stripe_dispute_event($1::jsonb,$2,$3,$4::jsonb,$5)', [JSON.stringify(payload), p.intent, read, JSON.stringify([bankDispute(id, 'won')]), null])
+  assert.equal((await deliver({ ...event, id: `evt_${randomUUID()}` }, beforeLoss)).applied, false)
+  assert.equal((await getPayment(p.id)).status, 'refunded')
+  assert.equal((await deliver(event, observed())).applied, true)
+  assert.equal((await getPayment(p.id)).status, 'completed')
 })
 
 test('closed-before-open dispute snapshots preserve losses and coexist with the actual webhook RPC', async () => {

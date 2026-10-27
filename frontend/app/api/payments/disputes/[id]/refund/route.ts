@@ -6,6 +6,7 @@ import { supabaseAdmin } from '@/lib/supabase/server'
 import { withApiErrorHandler, ErrorFactory } from '@/lib/utils/error-handler'
 import { log } from '@/lib/utils/logger'
 import { rateLimitEnhanced, RateLimitConfigs } from '@/lib/utils/rate-limit-enhanced'
+import { lifecycleRpc, LifecycleConflict } from '@/lib/payments/lifecycle'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,6 +41,14 @@ export const POST = withApiErrorHandler(async (req: NextRequest) => {
   }
   if (refunds.reduce((sum, refund) => sum + (refund.status === 'succeeded' ? refund.amount : 0), 0) >= intent.amount) {
     return NextResponse.json({ success: true, refunded: true, status: 'succeeded' })
+  }
+  try {
+    // A durable reservation under the payment row lock excludes a simultaneous
+    // seller-recovery approval. Keep it if Stripe's outcome is uncertain.
+    await lifecycleRpc('reserve_admin_payment_refund', { p_payment_id: payment.id, p_admin_user_id: auth.user?.id })
+  } catch (error) {
+    if (error instanceof LifecycleConflict) return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
   }
   const refund = await stripe.refunds.create({
     payment_intent: payment.stripe_payment_intent,

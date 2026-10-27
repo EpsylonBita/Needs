@@ -1,0 +1,145 @@
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const mocks = vi.hoisted(() => ({ fetch: vi.fn(), session: vi.fn() }))
+vi.mock('@/lib/supabase/client', () => ({ supabase: { auth: { getSession: mocks.session } } }))
+vi.mock('@/lib/utils/csrf', () => ({ withCsrfHeaders: async (headers: Record<string, string>) => ({ ...headers, 'X-CSRF-Token': 'csrf' }) }))
+import SellerRecovery from '@/app/dashboard/admin/disputes/seller-recovery'
+
+const preview = {
+  paymentId: 'payment-1', stripeDisputeId: 'du_1', eligible: true, blockedReasons: [], previewVersion: 'bound-preview',
+  currency: 'eur', grossAmountMinor: 2000, feeAmountMinor: 200, sellerNetAmountMinor: 1800, recovery: null,
+  originalAmountMinor: 2000, originalCurrency: 'eur', originalFeeAmountMinor: 200, originalFeeCurrency: 'eur',
+}
+const reply = (body: unknown, status = 200) => ({ ok: status < 400, status, json: async () => body })
+const changed = vi.fn()
+const renderPanel = () => render(<SellerRecovery paymentId="payment-1" stripeDisputeId="du_1" locale="en" onClose={() => {}} onUpdated={changed} />)
+beforeEach(() => {
+  vi.clearAllMocks(); vi.stubGlobal('fetch', mocks.fetch)
+  mocks.session.mockResolvedValue({ data: { session: { access_token: 'admin-token', user: { id: 'admin-1' } } }, error: null })
+  mocks.fetch.mockResolvedValue(reply(preview))
+})
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+
+describe('admin-approved seller recovery', () => {
+  it('previews authenticated exact bindings and requires reason plus explicit confirmation', async () => {
+    renderPanel()
+    expect(await screen.findByText('€18.00')).toBeInTheDocument()
+    expect(mocks.fetch).toHaveBeenCalledWith('/api/admin/payments/recovery/preview', expect.objectContaining({ method: 'POST', body: JSON.stringify({ paymentId: 'payment-1', expectedUserId: 'admin-1' }), headers: expect.objectContaining({ Authorization: 'Bearer admin-token', 'X-CSRF-Token': 'csrf' }) }))
+    const button = screen.getByRole('button', { name: 'Approve recovery' })
+    expect(button).toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Reason for recovery'), { target: { value: 'Confirmed lost chargeback' } })
+    expect(button).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox'))
+    expect(button).not.toBeDisabled()
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+    mocks.fetch.mockResolvedValueOnce(reply({ ...preview, eligible: false, recovery: { id: 'recovery-1', status: 'completed', approvedAt: '2026-01-01', completedAt: '2026-01-01', lastErrorCode: null } }))
+    fireEvent.click(button)
+    expect(await screen.findByRole('status')).toHaveTextContent('Recovery verified by Stripe.')
+    expect(mocks.fetch).toHaveBeenCalledWith('/api/admin/payments/recovery/execute', expect.objectContaining({ body: JSON.stringify({ paymentId: 'payment-1', expectedUserId: 'admin-1', previewVersion: 'bound-preview', reason: 'Confirmed lost chargeback' }) }))
+    expect(screen.queryByRole('button', { name: 'Approve recovery' })).toBeNull()
+    expect(changed).toHaveBeenCalledOnce()
+  })
+  it('approves the exact USD seller settlement independently from the original EUR payment', async () => {
+    const converted = { ...preview, currency: 'usd', grossAmountMinor: 223, feeAmountMinor: 11, sellerNetAmountMinor: 212,
+      originalAmountMinor: 200, originalCurrency: 'eur', originalFeeAmountMinor: 10, originalFeeCurrency: 'eur' }
+    mocks.fetch.mockResolvedValue(reply(converted))
+    renderPanel()
+    expect(await screen.findByText('USD 2.23')).toBeInTheDocument()
+    expect(screen.getByText('USD 0.11')).toBeInTheDocument()
+    expect(screen.getByText('USD 2.12')).toBeInTheDocument()
+    expect(screen.getByText('Original customer payment')).toBeInTheDocument()
+    expect(screen.getByText('EUR 2.00')).toBeInTheDocument()
+    expect(screen.getByText('EUR 0.10')).toBeInTheDocument()
+    expect(screen.getByText('The original seller transfer is reversed in USD. These amounts come from Stripe; no exchange rate is estimated.')).toBeInTheDocument()
+    const checkbox = screen.getByRole('checkbox', { name: /I confirm recovery of USD\s2\.12 from the seller for this dispute\./ })
+    fireEvent.change(screen.getByLabelText('Reason for recovery'), { target: { value: 'Verified original seller transfer' } })
+    fireEvent.click(checkbox)
+    const button = screen.getByRole('button', { name: 'Approve recovery' })
+    expect(button).not.toBeDisabled()
+    mocks.fetch.mockResolvedValueOnce(reply({ ...converted, eligible: false, recovery: { id: 'recovery-1', status: 'completed', approvedAt: '2026-01-01', completedAt: '2026-01-01', lastErrorCode: null } }))
+    fireEvent.click(button)
+    expect(await screen.findByRole('status')).toHaveTextContent('Recovery verified by Stripe.')
+    expect(mocks.fetch).toHaveBeenLastCalledWith('/api/admin/payments/recovery/execute', expect.objectContaining({ body: JSON.stringify({ paymentId: 'payment-1', expectedUserId: 'admin-1', previewVersion: 'bound-preview', reason: 'Verified original seller transfer' }) }))
+  })
+  it('keeps unverified settlement amounts unavailable rather than reusing the original EUR price', async () => {
+    mocks.fetch.mockResolvedValue(reply({ ...preview, eligible: false, stripeDisputeId: null, previewVersion: null, currency: null,
+      grossAmountMinor: null, feeAmountMinor: null, sellerNetAmountMinor: null, originalFeeAmountMinor: null, originalFeeCurrency: null,
+      blockedReasons: ['The seller transfer could not be verified.'] }))
+    renderPanel()
+    expect(await screen.findByText('The seller transfer could not be verified.')).toBeInTheDocument()
+    expect(screen.getByText('€20.00')).toBeInTheDocument()
+    expect(screen.getAllByText('Unavailable')).toHaveLength(3)
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Approve recovery' })).toBeNull()
+  })
+  it('shows pending honestly and retries the same approved preview only after a new confirmation', async () => {
+    renderPanel(); await screen.findByText('€18.00')
+    fireEvent.change(screen.getByLabelText('Reason for recovery'), { target: { value: 'Confirmed bank loss' } })
+    fireEvent.click(screen.getByRole('checkbox'))
+    mocks.fetch.mockResolvedValueOnce(reply({ ...preview, recovery: { id: 'recovery-1', status: 'pending', approvedAt: '2026-01-01', completedAt: null, lastErrorCode: null } }, 202))
+    fireEvent.click(screen.getByRole('button', { name: 'Approve recovery' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Recovery pending. Completion has not been confirmed.')
+    expect(screen.getByRole('button', { name: 'Retry approved recovery' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox'))
+    expect(screen.getByRole('button', { name: 'Retry approved recovery' })).not.toBeDisabled()
+  })
+  it('blocks partial or otherwise ineligible cases', async () => {
+    mocks.fetch.mockResolvedValue(reply({ ...preview, stripeDisputeId: null, eligible: false, blockedReasons: ['A partial loss requires manual review.'], previewVersion: null }))
+    renderPanel()
+    expect(await screen.findByText('A partial loss requires manual review.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve recovery' })).toBeNull()
+    expect(screen.queryByRole('checkbox')).toBeNull()
+  })
+  it('does not offer a second recovery after manual review is required', async () => {
+    mocks.fetch.mockResolvedValue(reply({ ...preview, eligible: false, recovery: { id: 'recovery-1', status: 'review_required', approvedAt: '2026-01-01', completedAt: null, lastErrorCode: 'insufficient_balance' } }))
+    renderPanel()
+    expect(await screen.findByRole('status')).toHaveTextContent('Manual review required. Recovery is not confirmed.')
+    expect(screen.queryByRole('button', { name: 'Approve recovery' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Retry approved recovery' })).toBeNull()
+  })
+  it('flags a late bank win while preserving the fact that recovery completed', async () => {
+    mocks.fetch.mockResolvedValue(reply({ ...preview, eligible: false, recovery: { id: 'recovery-1', status: 'completed', approvedAt: '2026-01-01', completedAt: '2026-01-01', lastErrorCode: 'late_win_after_recovery' } }))
+    renderPanel()
+    expect(await screen.findByRole('status')).toHaveTextContent('Recovery verified by Stripe.')
+    expect(screen.getByRole('alert')).toHaveTextContent('Funds were recovered, but the bank outcome changed. Manual review is required')
+    expect(screen.queryByRole('button', { name: 'Approve recovery' })).toBeNull()
+  })
+  it('explains insufficient seller funds without claiming that pending recovery completed', async () => {
+    mocks.fetch.mockResolvedValue(reply({ ...preview, recovery: { id: 'recovery-1', status: 'pending', approvedAt: '2026-01-01', completedAt: null, lastErrorCode: 'insufficient_seller_balance' } }))
+    renderPanel()
+    expect(await screen.findByRole('status')).toHaveTextContent('Recovery pending. Completion has not been confirmed.')
+    expect(screen.getByRole('alert')).toHaveTextContent('The seller has insufficient available funds.')
+    expect(screen.getByRole('button', { name: 'Retry approved recovery' })).toBeDisabled()
+  })
+  it('consumes an exact manual-review HTTP409 outcome and removes stale approval controls', async () => {
+    renderPanel(); await screen.findByText('€18.00')
+    fireEvent.change(screen.getByLabelText('Reason for recovery'), { target: { value: 'Confirmed bank loss' } })
+    fireEvent.click(screen.getByRole('checkbox'))
+    mocks.fetch.mockResolvedValueOnce(reply({ ...preview, eligible: false, blockedReasons: ['The bank outcome changed.'], recovery: { id: 'recovery-1', status: 'review_required', approvedAt: '2026-01-01', completedAt: null, lastErrorCode: 'dispute_not_lost' } }, 409))
+    fireEvent.click(screen.getByRole('button', { name: 'Approve recovery' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Manual review required. Recovery is not confirmed.')
+    expect(screen.getByText('The bank outcome changed.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve recovery' })).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(changed).toHaveBeenCalledOnce()
+  })
+  it('surfaces stale-preview failure without claiming money moved', async () => {
+    renderPanel(); await screen.findByText('€18.00')
+    fireEvent.change(screen.getByLabelText('Reason for recovery'), { target: { value: 'Confirmed bank loss' } })
+    fireEvent.click(screen.getByRole('checkbox'))
+    mocks.fetch.mockResolvedValueOnce(reply({ error: 'Preview changed; review again.' }, 409))
+    fireEvent.click(screen.getByRole('button', { name: 'Approve recovery' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Preview changed; review again.')
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(changed).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Approve recovery' })).toBeDisabled()
+  })
+  it('rejects a preview for another bank dispute', async () => {
+    mocks.fetch.mockResolvedValue(reply({ ...preview, stripeDisputeId: 'du_other' }))
+    renderPanel()
+    expect(await screen.findByRole('alert')).toHaveTextContent('The recovery preview does not match this dispute.')
+    expect(screen.queryByRole('button', { name: 'Approve recovery' })).toBeNull()
+    await waitFor(() => expect(mocks.fetch).toHaveBeenCalledTimes(1))
+  })
+})

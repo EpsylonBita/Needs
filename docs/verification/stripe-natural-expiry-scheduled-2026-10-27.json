@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "run": "needs-natural-expiry-52b57489-2316-4e85-a242-6495563b9e71",
+  "platformId": "acct_1UUqkiLEgZ0a06x6",
+  "connectedId": "acct_1UUyVUL5kmhcKzLl",
+  "livemode": false,
+  "mode": "verify",
+  "observedAt": "2026-10-27T12:06:50.280Z",
+  "intentId": "pi_3UV98JLEgZ0a06x60Cd6e9Ig",
+  "authorizationChargeId": "ch_3UV98JLEgZ0a06x60X3NVaku",
+  "captureBefore": 1793707539,
+  "captureBeforeUTC": "2026-11-03T12:05:39.000Z",
+  "providerStatus": "requires_capture",
+  "amountReceived": 0,
+  "canceledAt": null,
+  "cancellationReason": null,
+  "status": "not_due",
+  "verified": false,
+  "nextCheckAt": "2026-11-03T12:10:39.000Z",
+  "scope": "Natural Stripe authorization expiry only; application cancellation reconciliation is verified separately. No shared database fixture exists."
+}

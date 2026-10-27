@@ -1,5 +1,7 @@
 # Dependency upgrade — 14 October 2026
 
+Historical report. See [the 27 October dependency update](DEPENDENCY_UPGRADE_2026-10-27.md) for the current versions, security results and compatibility holds.
+
 The frontend uses npm and the checked-in `package-lock.json`. Direct dependency versions are pinned to the stable npm registry `latest` tags checked on this date, with the two peer-compatibility exceptions below. The obsolete pnpm lockfile was removed so the package managers cannot resolve different applications.
 
 ## Runtime and main versions

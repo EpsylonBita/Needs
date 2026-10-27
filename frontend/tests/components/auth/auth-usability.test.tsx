@@ -1,11 +1,11 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ login: vi.fn(), register: vi.fn(), close: vi.fn(), authenticated: vi.fn(), locale: 'en' }));
+const mocks = vi.hoisted(() => ({ login: vi.fn(), register: vi.fn(), close: vi.fn(), authenticated: vi.fn(), toast: vi.fn(), locale: 'en' }));
 vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
 vi.mock('next/dynamic', () => ({ default: () => function ListingDialog({ open }: { open: boolean }) { return open ? <div role="dialog" aria-label="Create a listing" /> : null; } }));
 vi.mock('@/contexts/auth-context', () => ({ useAuth: () => ({ login: mocks.login, register: mocks.register }) }));
-vi.mock('@/components/ui/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock('@/components/ui/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }));
 vi.mock('@/contexts/i18n-context', async () => {
   const { authContactMessages } = await import('@/locales/auth-contact-el');
   return { useI18n: () => ({ locale: mocks.locale, t: (key: string, fallback?: string) => mocks.locale === 'el' ? authContactMessages[key as keyof typeof authContactMessages] ?? fallback ?? key : fallback ?? key }) };
@@ -149,6 +149,7 @@ describe('accessible authentication forms', () => {
     finish({ requiresEmailConfirmation: true });
     await waitFor(() => expect(mocks.close).toHaveBeenCalledTimes(1));
     expect(mocks.authenticated).not.toHaveBeenCalled();
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ description: 'Check your email to confirm your account before signing in.' }));
   });
 
   it('shows Greek form labels, recovery links and validation together', async () => {
@@ -159,6 +160,26 @@ describe('accessible authentication forms', () => {
     fireEvent.submit(screen.getByRole('button', { name: 'Σύνδεση' }).closest('form')!);
     expect(await screen.findByText('Συμπλήρωσε μια έγκυρη διεύθυνση email.')).toBeInTheDocument();
     expect(screen.getByLabelText('Κωδικός')).toHaveAccessibleDescription('Συμπλήρωσε τον κωδικό σου.');
+  });
+
+  it('keeps success feedback when signing in without an immediate continuation', async () => {
+    mocks.login.mockResolvedValue(undefined);
+    render(<AuthDialog isOpen onClose={mocks.close} />);
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'maria@example.com' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'GoodPassword!1' } });
+    fireEvent.submit(screen.getByRole('button', { name: 'Sign in' }).closest('form')!);
+    await waitFor(() => expect(mocks.close).toHaveBeenCalledTimes(1));
+    expect(mocks.toast).toHaveBeenCalledWith({ title: 'Login successful', description: 'You have been logged in successfully.' });
+  });
+
+  it('continues an authenticated signup without covering the next workflow with a success toast', async () => {
+    mocks.register.mockResolvedValue({ requiresEmailConfirmation: false });
+    render(<AuthDialog isOpen initialMode="signup" onClose={mocks.close} onAuthenticated={mocks.authenticated} />);
+    fillRegistration();
+    fireEvent.submit(screen.getByRole('button', { name: 'Create account' }).closest('form')!);
+    await waitFor(() => expect(mocks.authenticated).toHaveBeenCalledTimes(1));
+    expect(mocks.close).not.toHaveBeenCalled();
+    expect(mocks.toast).not.toHaveBeenCalled();
   });
 
   it('continues a new listing action only after the actual sign-in succeeds', async () => {
@@ -175,5 +196,6 @@ describe('accessible authentication forms', () => {
     fireEvent.submit(screen.getByRole('button', { name: 'Sign in' }).closest('form')!);
     expect(await screen.findByRole('dialog', { name: 'Create a listing' })).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: 'Welcome back' })).not.toBeInTheDocument();
+    expect(mocks.toast).not.toHaveBeenCalled();
   });
 });

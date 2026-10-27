@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ constructEvent: vi.fn(), retrieveCharge: vi.fn(), rpc: vi.fn(), listRefunds: vi.fn() }))
-vi.mock('@/lib/stripe/server', () => ({ stripe: { webhooks: { constructEvent: mocks.constructEvent }, charges: { retrieve: mocks.retrieveCharge }, refunds: { list: mocks.listRefunds } } }))
+const mocks = vi.hoisted(() => ({ constructEvent: vi.fn(), retrieveCharge: vi.fn(), rpc: vi.fn(), listRefunds: vi.fn(), listDisputes: vi.fn() }))
+vi.mock('@/lib/stripe/server', () => ({ stripe: { webhooks: { constructEvent: mocks.constructEvent }, charges: { retrieve: mocks.retrieveCharge }, refunds: { list: mocks.listRefunds }, disputes: { list: mocks.listDisputes } } }))
 vi.mock('@/lib/supabase/server', () => ({ supabaseAdmin: { rpc: mocks.rpc } }))
 vi.mock('@/lib/utils/logger', () => ({ log: vi.fn() }))
 import { POST } from '@/app/api/payments/webhook/route'
@@ -21,6 +21,7 @@ beforeEach(() => {
   mocks.rpc.mockResolvedValue({ data: { action: 'payment_completed', duplicate: false }, error: null })
   mocks.retrieveCharge.mockResolvedValue({ id: 'ch_123', payment_intent: 'pi_123' })
   mocks.listRefunds.mockResolvedValue({ data: [{ id: 're_123', amount: 500, currency: 'eur', status: 'succeeded' }], has_more: false })
+  mocks.listDisputes.mockResolvedValue({ data: [{ id: 'dp_123', payment_intent: 'pi_123', amount: 1000, currency: 'eur', status: 'won', reason: 'fraudulent' }], has_more: false })
 })
 afterEach(() => { vi.unstubAllEnvs() })
 
@@ -74,6 +75,8 @@ describe('Secure Stripe webhook endpoint', () => {
     ['transfer.failed', { id: 'tr_123', amount: 1000, source_transaction: 'ch_123' }, 'pi_123'],
     ['charge.dispute.created', { id: 'dp_123', charge: 'ch_123', status: 'needs_response' }, 'pi_123'],
     ['charge.dispute.closed', { id: 'dp_123', charge: 'ch_123', status: 'won' }, 'pi_123'],
+    ['charge.dispute.updated', { id: 'dp_123', charge: 'ch_123', status: 'lost' }, 'pi_123'],
+    ['charge.dispute.funds_reinstated', { id: 'dp_123', charge: 'ch_123', status: 'won' }, 'pi_123'],
     ['payout.created', { id: 'po_123', amount: 5000 }, null],
     ['charge.captured', { id: 'ch_123', payment_intent: 'pi_123' }, null],
   ])('dispatches %s with the resolved payment reference', async (type, object, intent) => {
@@ -82,7 +85,7 @@ describe('Secure Stripe webhook endpoint', () => {
     const response = await POST(request())
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ received: true, processed: true })
-    expect(mocks.rpc).toHaveBeenCalledWith(type === 'charge.refunded' ? 'process_stripe_refund_event' : 'process_stripe_webhook_event', expect.objectContaining({ p_event: event, p_payment_intent: intent }))
+    expect(mocks.rpc).toHaveBeenCalledWith(type.startsWith('charge.dispute.') ? 'process_stripe_dispute_event' : type === 'charge.refunded' ? 'process_stripe_refund_event' : 'process_stripe_webhook_event', expect.objectContaining({ p_event: event, p_payment_intent: intent }))
     expect(response.headers.get('X-Request-Id')).toBeTruthy()
   })
   it('keeps Stripe reference lookup errors retryable', async () => {

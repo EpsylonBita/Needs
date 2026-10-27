@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   locale: 'en',
   updateError: null as { message: string } | null,
   historyError: false,
+  transactions: [] as Record<string, unknown>[],
 }))
 vi.mock('@/contexts/i18n-context', () => ({ useI18n: () => ({ locale: state.locale, t: (key: string, fallback?: string) => fallback ?? key }) }))
 vi.mock('@/lib/utils/csrf', () => ({ withCsrfHeaders: async (headers: Record<string, string>) => ({ ...headers, 'X-CSRF-Token': 'csrf' }) }))
@@ -21,7 +22,7 @@ vi.mock('@/lib/supabase/client', () => ({ supabase: {
       update: (payload: unknown) => { mutation = true; state.update(payload); return query },
       single: async () => ({ data: table === 'profiles' ? { id: 'buyer' } : state.payment, error: null }),
       then: (resolve: (value: unknown) => unknown) => Promise.resolve({
-        data: table === 'payments' ? [state.payment] : table === 'listings' ? [{ id: 'listing', title: 'Request listing' }] : [],
+        data: table === 'payments' ? [state.payment] : table === 'transactions' ? state.transactions : table === 'listings' ? [{ id: 'listing', title: 'Request listing' }] : [],
         error: mutation ? state.updateError : table === 'transactions' && state.historyError ? new Error('Offline') : null,
       }).then(resolve),
     }
@@ -38,12 +39,29 @@ beforeEach(() => {
   state.locale = 'en'
   state.updateError = null
   state.historyError = false
+  state.transactions = []
   state.payment = { id: 'payment', listing_id: 'listing', buyer_id: 'buyer', seller_id: 'seller', amount: 20, currency: 'eur', status: 'requires_capture', stripe_payment_intent: 'pi_test', buyer_confirmed: true, seller_confirmed: true, role_review_required: true }
   state.fetch.mockResolvedValue({ ok: false, status: 409, json: async () => ({ error: 'This older request payment needs administrator review before it can be captured.' }) })
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
 describe.each([{ name: 'Payments', Page: PaymentsPage }])('$name legacy request protection', ({ Page }) => {
+  it('displays each transaction in its own currency and never guesses unknown transfer currency', async () => {
+    state.transactions = [
+      { id: 'charge', payment_id: 'payment', type: 'charge', status: 'failed', amount: 2, currency: 'eur' },
+      { id: 'transfer', payment_id: 'payment', type: 'transfer', status: 'created', amount: 2.23, currency: 'usd' },
+      { id: 'legacy', payment_id: 'payment', type: 'transfer', status: 'created', amount: 3.45, currency: null },
+    ]
+    render(<Page />)
+    const table = within(await screen.findByRole('table', { name: 'Transactions' }))
+    expect(table.getByText('€2.00')).toBeInTheDocument()
+    expect(table.getByText('US$2.23')).toBeInTheDocument()
+    expect(table.getByText('3.45 — currency unavailable')).toBeInTheDocument()
+    expect(table.getByText('Failed')).toBeInTheDocument()
+    expect(table.queryByText('€2.23')).not.toBeInTheDocument()
+    expect(table.queryByText('€3.45')).not.toBeInTheDocument()
+  })
+
   it('shows a retryable error when transaction history fails instead of a false empty state', async () => {
     state.historyError = true
     render(<Page />)

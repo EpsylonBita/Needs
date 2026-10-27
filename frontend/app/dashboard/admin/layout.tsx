@@ -19,10 +19,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     run()
   }, [router])
   return (
-    <div className="flex min-h-screen">
-      <aside className="w-56 border-r bg-card text-card-foreground p-4 space-y-2">
+    <div className="flex min-h-screen min-w-0 w-full flex-col md:flex-row">
+      <aside className="w-full min-w-0 shrink-0 border-b bg-card text-card-foreground p-4 space-y-2 md:w-56 md:border-b-0 md:border-r">
         <div className="text-lg font-bold">{t('admin.title','Admin')}</div>
-        <nav className="flex flex-col gap-2">
+        <nav className="flex flex-wrap gap-2 md:flex-col">
           <Link href="/dashboard/admin/overview" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.overview','Overview')}</Link>
           <Link href="/dashboard/payments/admin" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.payments','Payments')}</Link>
           <Link href="/dashboard/admin/disputes" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.disputes','Disputes')}</Link>
@@ -36,7 +36,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <Link href="/dashboard/admin/settings" className="px-2 py-1 rounded hover:bg-accent hover:text-accent-foreground">{t('admin.settings','Settings')}</Link>
         </nav>
       </aside>
-      <main className="flex-1 p-4">{children}</main>
+      <main className="min-w-0 w-full flex-1 p-3 sm:p-4">{children}</main>
     </div>
   )
 }
