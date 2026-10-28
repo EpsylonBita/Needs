@@ -11,6 +11,10 @@ export interface SearchListing {
   sub_category: string;
   seller_id: string;
   sellerRating?: number;
+  sellerReviewCount?: number;
+  sellerName?: string;
+  sellerAvatarUrl?: string;
+  sellerTitle?: string;
   coordinates: [number, number] | null;
   address?: { label?: string } | string;
   listing_images?: { url: string; main: boolean }[];

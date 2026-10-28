@@ -7,6 +7,8 @@ export const mapModernMessages = {
   'map.resetBearing': 'Reset map orientation',
   'map.attribution': 'Map attribution',
   'map.unavailable': 'The map is temporarily unavailable',
+  'map.loading': 'Loading map…',
+  'map.unsupported': 'This browser cannot display the map',
   'map.unavailableHint': 'You can still explore the listings in the results.',
   'map.retry': 'Try again',
   'map.listingsError': 'Nearby listings could not be refreshed. Move the map to try again.',

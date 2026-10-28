@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { NuqsTestingAdapter } from 'nuqs/adapters/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.mock('@/components/features/ads/new-listing-button', () => ({ NewListingButton: ({ children }: { children: React.ReactNode }) => <button>{children}</button> }));
 
 const mocks = vi.hoisted(() => ({ search: vi.fn(), retry: vi.fn(), position: vi.fn(), locale: 'en' }));
 vi.mock('@/components/features/search/use-listing-search', () => ({ useListingSearch: mocks.search }));
@@ -93,10 +94,10 @@ describe('search usability', () => {
 
   it('labels the distance slider and persists keyboard-compatible changes without retaining a stale page', async () => {
     const update = vi.fn();
-    render(<NuqsTestingAdapter searchParams="?distance=12&page=3" hasMemory onUrlUpdate={update}><SearchFilters /></NuqsTestingAdapter>);
+    render(<NuqsTestingAdapter searchParams="?distance=12&page=3&coordinates=23.7,37.9" hasMemory onUrlUpdate={update}><SearchFilters /></NuqsTestingAdapter>);
     const slider = screen.getByRole('slider', { name: 'Distance (km)' });
     expect(slider).toHaveAttribute('aria-valuetext', '12 kilometers');
-    expect(slider).toHaveAccessibleDescription('Distance applies when a location is available.');
+    expect(slider).toHaveAccessibleDescription('Distance applies around the selected location.');
     fireEvent.change(slider, { target: { value: '25' } });
     await waitFor(() => expect(update.mock.calls.at(-1)?.[0].searchParams.get('distance')).toBe('25'));
     expect(update.mock.calls.at(-1)?.[0].searchParams.get('page')).toBeNull();
@@ -121,7 +122,7 @@ describe('search usability', () => {
     const images = document.querySelectorAll('img');
     expect(images).toHaveLength(1);
     expect(images[0]).toHaveAttribute('src', 'https://storage.example.com/desk.jpg');
-    expect(screen.getByRole('link', { name: /Oak desk/ })).toHaveAttribute('href', '/listings/one');
+    expect(screen.getByRole('link', { name: /Oak desk/ })).toHaveAttribute('href', '/listings/one?returnTo=%2Fsearch');
     fireEvent.error(images[0]);
     expect(document.querySelector('img')).toBeNull();
     expect(screen.getAllByText('No photo added')).toHaveLength(2);

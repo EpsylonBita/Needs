@@ -5,12 +5,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ complete: vi.fn(), reset: vi.fn(), request: vi.fn(), resend: vi.fn(), replace: vi.fn() }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: mocks.replace }) }));
+vi.mock('@/contexts/auth-context', () => ({ useAuth: () => ({ user: { id: 'user-one' } }) }));
 vi.mock('@/lib/services/auth-email-service', () => ({ completeAuthEmailLink: mocks.complete, completePasswordReset: mocks.reset, requestPasswordReset: mocks.request, resendConfirmation: mocks.resend }));
 
 import { AuthEmailPanel, AuthEmailRequestForm } from '@/components/auth/auth-email-panel';
+import { savePendingPublication } from '@/lib/listings/publication-intent';
 
 beforeEach(() => {
   vi.resetAllMocks();
+  localStorage.clear();
   window.history.replaceState({}, '', '/auth/reset-password#access_token=temporary&refresh_token=temporary&type=recovery');
   mocks.complete.mockResolvedValue({ type: 'recovery', status: 'confirmed', recovery: { userId: 'user-one', expiresAt: Date.now() + 60000 } });
   mocks.reset.mockResolvedValue(undefined);
@@ -19,6 +22,14 @@ beforeEach(() => {
 });
 
 describe('auth email pages', () => {
+  it('offers the original publication action after verification, without publishing automatically', async () => {
+    savePendingPublication({ intent: 'request', query: 'guitar', returnTo: '/search?q=guitar&distance=10' });
+    mocks.complete.mockResolvedValue({ type: 'signup', status: 'confirmed' });
+    render(<AuthEmailPanel mode="confirm" />);
+    const continueAction = await screen.findByRole('link', { name: 'Continue where you left off' });
+    expect(continueAction).toHaveAttribute('href', '/search?q=guitar&distance=10&resumeListing=1');
+    expect(screen.queryByRole('button', { name: 'Publish listing' })).not.toBeInTheDocument();
+  });
   it('consumes a one-time link once under StrictMode and removes callback credentials', async () => {
     render(<StrictMode><AuthEmailPanel mode="reset" /></StrictMode>);
     await screen.findByLabelText('New password');

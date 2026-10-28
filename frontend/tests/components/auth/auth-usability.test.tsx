@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ login: vi.fn(), register: vi.fn(), close: vi.fn(), authenticated: vi.fn(), toast: vi.fn(), locale: 'en' }));
 vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
-vi.mock('next/dynamic', () => ({ default: () => function ListingDialog({ open }: { open: boolean }) { return open ? <div role="dialog" aria-label="Create a listing" /> : null; } }));
+vi.mock('next/dynamic', () => ({ default: () => function ListingDialog({ open, initialDraft }: { open: boolean; initialDraft?: { query?: string } }) { return open ? <div role="dialog" aria-label="Create a listing" data-draft-title={initialDraft?.query ?? ''} /> : null; } }));
 vi.mock('@/contexts/auth-context', () => ({ useAuth: () => ({ login: mocks.login, register: mocks.register }) }));
 vi.mock('@/components/ui/use-toast', () => ({ useToast: () => ({ toast: mocks.toast }) }));
 vi.mock('@/contexts/i18n-context', async () => {
@@ -14,8 +14,10 @@ vi.mock('@/contexts/i18n-context', async () => {
 import { AuthDialog } from '@/components/auth/auth-dialog';
 import { RegisterForm } from '@/components/auth/register-form';
 import { NewListingButton } from '@/components/features/ads/new-listing-button';
+import { readPendingPublication } from '@/lib/listings/publication-intent';
+import { readAuthContinuation } from '@/lib/auth/return-path';
 
-beforeEach(() => { vi.resetAllMocks(); mocks.locale = 'en'; });
+beforeEach(() => { vi.resetAllMocks(); mocks.locale = 'en'; localStorage.clear(); });
 
 function fillRegistration() {
   fireEvent.change(screen.getByLabelText('Full name'), { target: { value: 'Maria Test' } });
@@ -26,6 +28,43 @@ function fillRegistration() {
 }
 
 describe('accessible authentication forms', () => {
+  it.each([86399999, 86400000])('applies the original 24-hour deadline at auth handoff after %s ms, even without storage', async elapsed => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const start = Date.now();
+    const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage disabled'); });
+    try {
+      mocks.login.mockResolvedValue(undefined);
+      render(<NewListingButton intent="request" initialDraft={{ query: 'guitar' }} />);
+      fireEvent.click(screen.getByRole('button', { name: 'New listing' }));
+      fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'maria@example.com' } });
+      fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'GoodPassword!1' } });
+      vi.setSystemTime(start + elapsed);
+      fireEvent.submit(screen.getByRole('button', { name: 'Sign in' }).closest('form')!);
+      const form = await screen.findByRole('dialog', { name: 'Create a listing' });
+      expect(form).toHaveAttribute('data-draft-title', elapsed < 86400000 ? 'guitar' : '');
+    } finally { storage.mockRestore(); vi.useRealTimers(); }
+  });
+  it('clears the pending draft and continuation when the guest explicitly discards the action', async () => {
+    render(<NewListingButton intent="request" initialDraft={{ query: 'guitar' }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'New listing' }));
+    expect(readPendingPublication()?.query).toBe('guitar');
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(readPendingPublication()).toBeNull();
+    expect(readAuthContinuation()).toBeNull();
+  });
+  it('keeps the search draft while signup waits for email confirmation', async () => {
+    mocks.register.mockResolvedValue({ requiresEmailConfirmation: true });
+    render(<NewListingButton intent="request" initialDraft={{ query: 'guitar', category: 'Items', tags: ['acoustic'], location: 'Athens', coordinates: '23.72,37.98' }}>Publish what you need</NewListingButton>);
+    fireEvent.click(screen.getByRole('button', { name: 'Publish what you need' }));
+    expect(screen.getByRole('dialog')).toHaveAccessibleDescription(/publish what you need/);
+    fireEvent.click(screen.getByRole('button', { name: 'Need an account? Sign up' }));
+    fillRegistration();
+    fireEvent.submit(screen.getByRole('button', { name: 'Create account' }).closest('form')!);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(readPendingPublication()).toEqual(expect.objectContaining({ intent: 'request', query: 'guitar', category: 'Items', tags: ['acoustic'], coordinates: '23.72,37.98', location: 'Athens' }));
+    expect(screen.queryByRole('dialog', { name: 'Create a listing' })).not.toBeInTheDocument();
+  });
   it('uses one named dialog and keeps form controls outside its heading in both modes', async () => {
     render(<AuthDialog isOpen onClose={mocks.close} />);
     const dialog = screen.getByRole('dialog');

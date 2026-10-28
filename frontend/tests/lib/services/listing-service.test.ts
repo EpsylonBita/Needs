@@ -18,6 +18,26 @@ beforeEach(() => {
   mocks.remove.mockResolvedValue({ error: null })
 })
 describe('listing persistence', () => {
+  it('rejects the previous account draft before profile lookup or writes', async () => {
+    mocks.getUser.mockResolvedValue({ data: { user: { id: 'account-b' } }, error: null });
+    await expect(createListing(listing, 'account-a')).rejects.toThrow('session changed');
+    expect(mocks.profile).not.toHaveBeenCalled();
+    expect(mocks.insertListing).not.toHaveBeenCalled();
+  });
+  it('rechecks the captured account after profile lookup and before insertion', async () => {
+    mocks.getUser.mockResolvedValueOnce({ data: { user: { id: 'account-a' } }, error: null })
+      .mockResolvedValueOnce({ data: { user: { id: 'account-b' } }, error: null });
+    await expect(createListing(listing, 'account-a')).rejects.toThrow('session changed');
+    expect(mocks.profile).toHaveBeenCalledOnce();
+    expect(mocks.insertListing).not.toHaveBeenCalled();
+    expect(mocks.insertTags).not.toHaveBeenCalled();
+  });
+  it('does not continue after the form cancels during profile lookup', async () => {
+    const controller = new AbortController();
+    mocks.profile.mockImplementation(async () => { controller.abort(); return { data: [{ id: 'profile', stripe_account_id: 'acct_test' }], error: null }; });
+    await expect(createListing(listing, 'user', controller.signal)).rejects.toThrow();
+    expect(mocks.insertListing).not.toHaveBeenCalled();
+  });
   it.each(['', undefined, 0])('rejects a missing rate amount %s before authentication or writes', async price => {
     await expect(createListing({ ...listing, description: 'Home care 10€/hour', main_category: 'Services', sub_category: 'I can', price })).rejects.toThrow('positive price');
     expect(mocks.getUser).not.toHaveBeenCalled();

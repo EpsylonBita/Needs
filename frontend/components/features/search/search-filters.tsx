@@ -10,8 +10,9 @@ import { Label } from '@/components/ui/label';
 import { useI18n } from '@/contexts/i18n-context';
 import { getSearchResetGeneration, useSearchState } from '@/hooks/use-search-state';
 import { getCurrentLocation } from '@/lib/services/location-service';
+import { searchCenter } from '@/lib/search/location';
 
-export default function SearchFilters({ fixedCategory }: { fixedCategory?: 'Items' | 'Services' }) {
+export default function SearchFilters({ fixedCategory, showLocationControl = true }: { fixedCategory?: 'Items' | 'Services'; showLocationControl?: boolean }) {
   const { category, subcategory, tags, distance, coordinates, reset } = useSearchState();
   const { t } = useI18n();
   const id = useId();
@@ -68,7 +69,7 @@ export default function SearchFilters({ fixedCategory }: { fixedCategory?: 'Item
       <Label htmlFor={`${id}-subcategory`}>{t('searchModern.subcategory', 'Subcategory')}</Label>
       <select id={`${id}-subcategory`} className={selectClass} value={selectedSubcategory} onChange={event => subcategory.set(event.target.value)}><option value="">{t('searchModern.allSubcategories', 'All subcategories')}</option>{subcategories.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
     </div>}
-    <div className="space-y-2">
+    {showLocationControl && <div className="space-y-2">
       <Button type="button" variant="outline" disabled={locating} onClick={() => { void locate(); }} aria-describedby={`${id}-location-help`} className="min-h-12 h-auto w-full whitespace-normal rounded-xl py-3">
         {locating ? <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" aria-hidden="true" /> : <LocateFixed className="mr-2 h-4 w-4 shrink-0" aria-hidden="true" />}
         {locating ? t('searchModern.locating', 'Finding your location...') : t('searchModern.useLocation', 'Use my location')}
@@ -76,11 +77,11 @@ export default function SearchFilters({ fixedCategory }: { fixedCategory?: 'Item
       <p id={`${id}-location-help`} className="text-xs leading-relaxed text-muted-foreground">{coordinates.value ? t('searchModern.locationSelected', 'Distance is measured from your selected location.') : t('searchModern.locationOptional', 'Location is optional. We only request it when you choose this button.')}</p>
       {locationError && <p role="alert" className="text-xs leading-relaxed text-destructive">{t('searchModern.locationError', 'Your location is unavailable. You can keep searching or choose all locations.')}</p>}
       {(coordinates.value || locating) && <Button type="button" variant="ghost" onClick={() => { cancelLocation(); void coordinates.set(null); }} className="min-h-11 h-auto w-full whitespace-normal rounded-xl py-2 text-sm">{t('searchModern.allLocationsAction', 'Search all locations')}</Button>}
-    </div>
+    </div>}
     <div className="space-y-1">
       <div className="flex items-center justify-between gap-2"><Label htmlFor={`${id}-distance`}>{t('searchModern.distance', 'Distance (km)')}</Label><span className="text-sm font-medium tabular-nums text-primary" aria-hidden="true">{distance.value} km</span></div>
-      <input id={`${id}-distance`} type="range" min={1} max={500} step={1} value={distance.value} onChange={event => distance.set(Number(event.target.value))} aria-valuetext={t('searchModern.distanceValue', '{distance} kilometers').replace('{distance}', String(distance.value))} aria-describedby={`${id}-distance-help`} className="h-11 w-full cursor-pointer accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
-      <p id={`${id}-distance-help`} className="text-xs leading-relaxed text-muted-foreground">{t('searchModern.distanceHint', 'Distance applies when a location is available.')}</p>
+      <input id={`${id}-distance`} type="range" min={1} max={500} step={1} value={distance.value} disabled={!searchCenter(coordinates.value)} onChange={event => distance.set(Number(event.target.value))} aria-valuetext={t('searchModern.distanceValue', '{distance} kilometers').replace('{distance}', String(distance.value))} aria-describedby={`${id}-distance-help`} className="h-11 w-full cursor-pointer accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" />
+      <p id={`${id}-distance-help`} className="text-xs leading-relaxed text-muted-foreground">{searchCenter(coordinates.value) ? t('searchModern.distanceHint', 'Distance applies around the selected location.') : t('searchModern.distanceDisabled', 'Choose an area or use your location to enable the radius.')}</p>
     </div>
     <div className="space-y-2">
       <Label htmlFor={`${id}-tags`}>{t('searchModern.tags', 'Tags')}</Label>

@@ -53,8 +53,16 @@ describe('shared search reset generation', () => {
     await result.current.category.set('Services');
     expect(mocks.setState).toHaveBeenLastCalledWith({ category: 'Services', subcategory: null, page: null });
     await result.current.coordinates.set('23.7,37.9');
-    expect(mocks.setState).toHaveBeenLastCalledWith({ coordinates: '23.7,37.9', page: null });
+    expect(mocks.setState).toHaveBeenLastCalledWith({ coordinates: '23.7,37.9', location: null, page: null });
     expect(getSearchResetGeneration()).toBe(before);
+  });
+
+  it('stores the selected label and center atomically and clears both together', async () => {
+    const { result } = renderHook(() => useSearchState());
+    await result.current.location.set('23.72,37.98', 'Athens');
+    expect(mocks.setState).toHaveBeenLastCalledWith({ coordinates: '23.72,37.98', location: 'Athens', page: null });
+    await result.current.location.set(null);
+    expect(mocks.setState).toHaveBeenLastCalledWith({ coordinates: null, location: null, page: null });
   });
 
   it('does not revive previously captured work if the asynchronous URL update fails', async () => {

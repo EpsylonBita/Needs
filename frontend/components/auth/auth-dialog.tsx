@@ -17,22 +17,30 @@ export interface AuthDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onAuthenticated?: () => void;
+  onAwaitingConfirmation?: () => void;
+  onNavigateAway?: () => void;
+  purpose?: 'request' | 'offer' | 'listing' | 'conversation';
+  listingTitle?: string;
   initialMode?: 'signin' | 'signup';
 }
 
-export function AuthDialog({ isOpen, onClose, onAuthenticated, initialMode = 'signin' }: AuthDialogProps) {
+export function AuthDialog({ isOpen, onClose, onAuthenticated, onAwaitingConfirmation, onNavigateAway, purpose, listingTitle, initialMode = 'signin' }: AuthDialogProps) {
   const [mode, setMode] = useState(initialMode);
   const [busy, setBusy] = useState(false);
   const { t } = useI18n();
   const pathname = usePathname();
   const previousPath = useRef(pathname);
   const wasOpen = useRef(isOpen);
+  const purposeCopy = purpose === 'request' ? t('auth.continue.request', 'Sign in to publish what you need. You will review your listing before publishing.')
+    : purpose === 'offer' ? t('auth.continue.offer', 'Sign in to offer an item or service. You will review your listing before publishing.')
+      : purpose === 'listing' ? t('auth.continue.listing', 'Sign in to create your listing. Nothing is published until you confirm.')
+        : purpose === 'conversation' ? t('auth.continue.conversation', 'Sign in to discuss “{title}” with its creator.').replace('{title}', listingTitle || t('auth.continue.thisListing', 'this listing')) : null;
 
   useEffect(() => {
     if (previousPath.current === pathname) return;
     previousPath.current = pathname;
-    if (isOpen) onClose();
-  }, [isOpen, onClose, pathname]);
+    if (isOpen) (onNavigateAway ?? onClose)();
+  }, [isOpen, onClose, onNavigateAway, pathname]);
 
   useEffect(() => {
     if (isOpen && !wasOpen.current) setMode(initialMode);
@@ -54,11 +62,11 @@ export function AuthDialog({ isOpen, onClose, onAuthenticated, initialMode = 'si
         <DialogHeader className={styles.header}>
           <span className={styles.eyebrow}>{mode === 'signin' ? t('auth.signIn.cta', 'Sign in') : t('auth.register.submit', 'Create account')}</span>
           <DialogTitle className={styles.title}>{mode === 'signin' ? t('auth.welcome', 'Welcome back') : t('auth.join', 'Make room for possibilities')}</DialogTitle>
-          <DialogDescription className={styles.description}>{mode === 'signin' ? t('auth.redesign.signInDescription', 'Sign in and pick up where you left off.') : t('auth.createAccount.desc', 'Create your account to share what you have and find what you need.')}</DialogDescription>
+          <DialogDescription className={styles.description}>{purposeCopy ?? (mode === 'signin' ? t('auth.redesign.signInDescription', 'Sign in and pick up where you left off.') : t('auth.createAccount.desc', 'Create your account to share what you have and find what you need.'))}</DialogDescription>
         </DialogHeader>
         {mode === 'signin'
           ? <LoginForm isOpen={isOpen} onClose={onClose} onAuthenticated={onAuthenticated} onBusyChange={setBusy} />
-          : <RegisterForm isOpen={isOpen} onClose={onClose} onAuthenticated={onAuthenticated} onBusyChange={setBusy} />}
+          : <RegisterForm isOpen={isOpen} onClose={onClose} onAuthenticated={onAuthenticated} onAwaitingConfirmation={onAwaitingConfirmation} onBusyChange={setBusy} />}
         <div className={styles.switchMode}>
           <Button type="button" variant="ghost" disabled={busy} onClick={() => setMode(current => current === 'signin' ? 'signup' : 'signin')} className={styles.switchButton}>
             {mode === 'signin' ? t('auth.toggle.signup', 'Need an account? Sign up') : t('auth.toggle.signin', 'Already have an account? Sign in')}

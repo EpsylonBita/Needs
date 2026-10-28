@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useI18n } from '@/contexts/i18n-context';
+import { useAuth } from '@/contexts/auth-context';
+import { clearAuthContinuation, readAuthContinuation } from '@/lib/auth/return-path';
 import {
   completeAuthEmailLink, completePasswordReset, requestPasswordReset, resendConfirmation,
   type AuthEmailResult,
@@ -75,6 +77,7 @@ export function AuthEmailRequestForm({ mode, initialEmail = '' }: { mode: Reques
 
 function EmailLinkForm({ mode }: { mode: 'confirm' | 'reset' }) {
   const { t, locale } = useI18n();
+  const { user } = useAuth();
   const id = useId();
   const request = useRef<Promise<AuthEmailResult> | null>(null);
   const confirmationInput = useRef<HTMLInputElement>(null);
@@ -123,7 +126,8 @@ function EmailLinkForm({ mode }: { mode: 'confirm' | 'reset' }) {
     } finally { setBusy(false); }
   }
 
-  const continueLink = <Button asChild className="h-12 w-full rounded-xl"><Link href="/dashboard">{t('auth.email.continue', 'Continue to your account')}</Link></Button>;
+  const continuation = readAuthContinuation(user?.id);
+  const continueLink = <Button asChild className="h-12 w-full rounded-xl"><Link href={continuation || '/dashboard'} onClick={clearAuthContinuation}>{continuation ? t('auth.continue.action', 'Continue where you left off') : t('auth.email.continue', 'Continue to your account')}</Link></Button>;
   if (loading) return <p role="status" className={`${noticeClass} flex items-center gap-3`}><Loader2 className="h-5 w-5 shrink-0 animate-spin text-primary" aria-hidden="true" />{t('auth.email.checking', 'Checking your email link...')}</p>;
   if (completed) return <div className="space-y-5"><p role="status" className={`${noticeClass} flex items-center gap-3`}><CheckCircle2 className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />{t('auth.email.passwordSaved', 'Your password has been updated.')}</p>{continueLink}</div>;
   if (result?.recovery) return <form onSubmit={savePassword} aria-busy={busy} aria-describedby={error ? `${id}-error` : undefined} className="space-y-5">

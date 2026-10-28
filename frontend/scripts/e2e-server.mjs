@@ -1,5 +1,14 @@
 import { spawn } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
+import { parseEnv } from 'node:util';
+
+// Explicitly opt in to read-only provider verification. Only the existing public
+// Mapbox token is read; account/payment/email configuration stays isolated below.
+let mapboxToken = 'pk.e2e-fixture';
+if (process.env.NEEDS_E2E_REAL_MAPBOX === '1') {
+  mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || parseEnv(await readFile('.env.local', 'utf8')).NEXT_PUBLIC_MAPBOX_TOKEN;
+  if (!mapboxToken) throw new Error('Real Mapbox verification requires the existing public token.');
+}
 
 // These values always replace .env.local. Browser fixtures never use a real account,
 // public backend, payment key or contact-email delivery configuration.
@@ -9,7 +18,7 @@ const env = {
   NEXT_PUBLIC_SUPABASE_ANON_KEY: 'public-e2e-fixture',
   SUPABASE_SERVICE_ROLE_KEY: 'server-e2e-fixture',
   PRICING_RETAIL_ENABLED: 'false',
-  NEXT_PUBLIC_MAPBOX_TOKEN: 'pk.e2e-fixture',
+  NEXT_PUBLIC_MAPBOX_TOKEN: mapboxToken,
   NEXT_PUBLIC_APP_URL: 'http://127.0.0.1:3102',
   NEXT_PUBLIC_API_URL: '', NEXT_PUBLIC_DOMAIN: '',
   NEXT_PUBLIC_PAYMENTS_ENABLED: 'false',

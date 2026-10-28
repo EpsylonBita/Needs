@@ -19,12 +19,13 @@ export interface RegisterFormProps {
   isOpen: boolean;
   onClose: () => void;
   onAuthenticated?: () => void;
+  onAwaitingConfirmation?: () => void;
   onBusyChange?: (busy: boolean) => void;
   onBackToLogin?: () => void;
   title?: string;
 }
 
-export function RegisterForm({ isOpen, onClose, onAuthenticated, onBusyChange }: RegisterFormProps) {
+export function RegisterForm({ isOpen, onClose, onAuthenticated, onAwaitingConfirmation, onBusyChange }: RegisterFormProps) {
   const { register: signUp } = useAuth();
   const { toast } = useToast();
   const { t } = useI18n();
@@ -53,7 +54,7 @@ export function RegisterForm({ isOpen, onClose, onAuthenticated, onBusyChange }:
       if (result.requiresEmailConfirmation || !onAuthenticated) toast({ title: t('auth.register.success', 'Account created'), description: result.requiresEmailConfirmation
         ? t('auth.register.confirm', 'Check your email to confirm your account before signing in.')
         : t('auth.register.ready', 'Your account is ready. Welcome to Needs.') });
-      if (result.requiresEmailConfirmation) onClose();
+      if (result.requiresEmailConfirmation) (onAwaitingConfirmation ?? onClose)();
       else (onAuthenticated ?? onClose)();
     } catch {
       setError(t('auth.error.register', 'Unable to create your account. Check your details and try again. If you already have an account, sign in or reset your password.'));
@@ -80,6 +81,7 @@ export function RegisterForm({ isOpen, onClose, onAuthenticated, onBusyChange }:
         {invalid ? <p id={`${inputId}-error`} role="alert" className="text-sm text-destructive">{field.validation}</p> : hint ? <p id={`${inputId}-hint`} className="text-xs leading-relaxed text-muted-foreground">{hint}</p> : null}
       </div>;
     })}
+    <p className={`${styles.phonePrivacy} text-xs leading-relaxed text-muted-foreground`}>{t('auth.phonePrivacy', 'Your phone is stored in your account and is not shown on your public profile. It is prefilled on new listings; you can change or remove it before publishing.')}</p>
     {error && <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm leading-relaxed text-destructive">{error}</p>}
     <Button type="submit" disabled={isSubmitting} className={styles.submit}>
       {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />{t('auth.register.busy', 'Creating account...')}</> : <>{t('auth.register.submit', 'Create account')}<ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" /></>}

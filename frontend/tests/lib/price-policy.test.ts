@@ -13,6 +13,6 @@ describe('published listing price policy', () => {
     expect(listingPriceNeedsConfirmation(0, 'Care costs 10€ for two hours', 'Services', 'I can')).toBe(false);
     expect(formatPublishedListingPrice(0, 'Care costs 10€ for two hours', 'en', 'Services', 'I can')).toBe('€0.00');
     expect(listingPriceNeedsConfirmation(0, 'Previously rented at 10€/hour', 'Items', 'Free')).toBe(false);
-    expect(formatPublishedListingPrice(0, 'Previously rented at 10€/hour', 'en', 'Items', 'Free')).toBe('€0.00');
+    expect(formatPublishedListingPrice(0, 'Previously rented at 10€/hour', 'en', 'Items', 'Free')).toBe('Free');
   });
 });

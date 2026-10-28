@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabase/server'
 import { ErrorFactory, createValidationError } from '@/lib/utils/error-handler'
+import { DEMO_TRANSACTION_ERROR, isDemoListing } from '@/lib/listings/demo-policy'
 
 export type TradeListing = {
   id: string
@@ -11,6 +12,7 @@ export type TradeListing = {
 
 /** seller_id on a listing is its publisher; payment seller_id is the provider. */
 export async function resolveTradeParties(listing: TradeListing, actorId: string, chatId?: string | null) {
+  if (isDemoListing(listing.id)) throw createValidationError('listingId', DEMO_TRANSACTION_ERROR)
   const isRequest = (listing.main_category === 'Items' && listing.sub_category === 'Buy')
     || (listing.main_category === 'Services' && listing.sub_category === 'I want')
   const valid = listing.main_category === 'Items'

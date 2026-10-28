@@ -9,27 +9,35 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/contexts/i18n-context';
 import { MapListingPreview, type MapListing } from './map-listing-preview';
-import { formatPublishedListingPrice, listingPriceNeedsConfirmation } from '@/lib/listings/price-policy';
+import { formatPublishedListingPrice } from '@/lib/listings/price-policy';
+import { demoListingCopy, isDemoListing } from '@/lib/listings/demo-policy';
 
 interface SearchResult extends MapListing {
   sellerId?: string;
   sellerRating?: number;
 }
 
-interface MapProps { results: SearchResult[]; live?: boolean }
+export type MapStatus = 'loading' | 'ready' | 'error';
+type MapFailure = 'configuration' | 'unsupported' | 'provider' | 'timeout' | 'rendering';
+export interface MapProps { results: SearchResult[]; live?: boolean; returnTo?: string; onStatusChange?: (status: MapStatus) => void }
+
+const MAP_LOAD_TIMEOUT = 15_000;
 
 function validCoordinates(result: SearchResult) {
   const [longitude, latitude] = result.location.coordinates;
   return Number.isFinite(longitude) && Number.isFinite(latitude) && Math.abs(longitude) <= 180 && Math.abs(latitude) <= 90;
 }
 
-export function Map({ results, live = false }: MapProps) {
+export function Map({ results, live = false, returnTo, onStatusChange }: MapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markers = useRef<{ marker: mapboxgl.Marker; button: HTMLButtonElement; id: string }[]>([]);
   const popup = useRef<mapboxgl.Popup | null>(null);
   const focusPreview = useRef(false);
-  const [mapError, setMapError] = useState(false);
+  const [mapError, setMapError] = useState<MapFailure | null>(null);
+  const [status, setStatus] = useState<MapStatus>('loading');
+  const startStyleLoad = useRef<(() => void) | null>(null);
+  const failMap = useRef<((reason: MapFailure) => void) | null>(null);
   const [listingsError, setListingsError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [liveResults, setLiveResults] = useState<SearchResult[] | null>(null);
@@ -43,6 +51,7 @@ export function Map({ results, live = false }: MapProps) {
   const [popupTarget, setPopupTarget] = useState<HTMLDivElement | null>(null);
   const visibleResults = live ? liveResults ?? results : results;
   const selected = visibleResults.find(result => result.id === selectedId) ?? null;
+  useEffect(() => { onStatusChange?.(status); }, [status, onStatusChange]);
   const closePreview = useCallback(() => {
     markers.current.find(item => item.id === selectedId)?.button.focus();
     setSelectedId(null);
@@ -52,14 +61,69 @@ export function Map({ results, live = false }: MapProps) {
     if (!mapContainer.current) return;
     let current: mapboxgl.Map | null = null;
     let resizeObserver: ResizeObserver | undefined;
-    const onError = () => setMapError(true);
-    setMapError(false);
+    let timer: ReturnType<typeof setTimeout>;
+    let active = true;
+    let disposed = false;
+    let ready = false;
+    let styleReload = false;
+    const dispose = () => {
+      if (disposed) return;
+      disposed = true;
+      clearTimeout(timer);
+      resizeObserver?.disconnect();
+      markers.current.forEach(({ marker }) => marker.remove());
+      markers.current = [];
+      current?.off('error', onError);
+      current?.off('load', onLoad);
+      current?.off('style.load', onStyleLoad);
+      current?.off('webglcontextlost', onContextLost);
+      current?.remove();
+      if (map.current === current) map.current = null;
+    };
+    const fail = (reason: MapFailure) => {
+      if (!active || disposed) return;
+      setMapError(reason);
+      setStatus('error');
+      dispose();
+    };
+    const onLoad = () => {
+      if (!active || disposed) return;
+      ready = true;
+      clearTimeout(timer);
+      setMapError(null);
+      setStatus('ready');
+    };
+    const onStyleLoad = () => { if (styleReload) { styleReload = false; onLoad(); } };
+    const onError = (event?: { error?: Error & { status?: number } }) => {
+      // Mapbox also emits recoverable tile errors. A rendered map must not vanish
+      // permanently because one optional resource failed after loading.
+      if (!ready || event?.error?.status === 401 || event?.error?.status === 403) fail('provider');
+    };
+    const onContextLost = () => fail('rendering');
+    const beginLoading = () => {
+      if (!active || disposed) return;
+      ready = false;
+      setMapError(null);
+      setStatus('loading');
+      clearTimeout(timer);
+      timer = setTimeout(() => fail('timeout'), MAP_LOAD_TIMEOUT);
+    };
+    startStyleLoad.current = () => { styleReload = true; beginLoading(); };
+    failMap.current = fail;
+    beginLoading();
+    const cleanup = () => {
+      active = false;
+      startStyleLoad.current = null;
+      failMap.current = null;
+      dispose();
+    };
     try {
       const token = (process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '').trim();
-      if (!token) throw new Error('Map unavailable');
-      mapboxgl.accessToken = token;
+      if (!token) { fail('configuration'); return cleanup; }
+      if (!mapboxgl.supported()) { fail('unsupported'); return cleanup; }
       current = new mapboxgl.Map({
         container: mapContainer.current,
+        accessToken: token,
         style: latestStyle.current,
         center: [23.7275, 37.9838],
         zoom: 10,
@@ -82,6 +146,9 @@ export function Map({ results, live = false }: MapProps) {
       appliedStyle.current = latestStyle.current;
       // Listen in both search and live views; errors never expose provider configuration.
       current.on('error', onError);
+      current.on('load', onLoad);
+      current.on('style.load', onStyleLoad);
+      current.on('webglcontextlost', onContextLost);
       current.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-right');
       current.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
       // Mapbox requests location only when this button is pressed. Do not call trigger().
@@ -98,22 +165,18 @@ export function Map({ results, live = false }: MapProps) {
         resizeObserver.observe(mapContainer.current);
       }
     } catch {
-      setMapError(true);
+      fail('rendering');
     }
-    return () => {
-      resizeObserver?.disconnect();
-      markers.current.forEach(({ marker }) => marker.remove());
-      markers.current = [];
-      current?.off('error', onError);
-      current?.remove();
-      if (map.current === current) map.current = null;
-    };
+    return cleanup;
   }, [t, attempt]);
 
   useEffect(() => {
     if (map.current && appliedStyle.current !== style) {
-      map.current.setStyle(style);
-      appliedStyle.current = style;
+      try {
+        startStyleLoad.current?.();
+        map.current.setStyle(style);
+        appliedStyle.current = style;
+      } catch { failMap.current?.('provider'); }
     }
   }, [style, attempt]);
 
@@ -185,15 +248,16 @@ export function Map({ results, live = false }: MapProps) {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'needs-map-price-marker';
-      const price = result.price === 0 && !listingPriceNeedsConfirmation(result.price, result.description, result.category, result.subcategory) ? t('map.free', 'Free') : typeof result.price === 'number' && Number.isFinite(result.price) ? formatPublishedListingPrice(result.price, result.description, locale, result.category, result.subcategory, { notation: 'compact', maximumFractionDigits: 1 }) : t('map.priceOnRequest', 'Ask for price');
-      button.setAttribute('aria-label', `${t('map.openListing', 'View listing: {title}').replace('{title}', result.title)} · ${price}`);
+      const price = typeof result.price === 'number' && Number.isFinite(result.price) ? formatPublishedListingPrice(result.price, result.description, locale, result.category, result.subcategory, { notation: 'compact', maximumFractionDigits: 1 }) : t('map.priceOnRequest', 'Ask for price');
+      const demo = isDemoListing(result.id) ? demoListingCopy[locale === 'el' ? 'el' : 'en'] : null;
+      button.setAttribute('aria-label', `${t('map.openListing', 'View listing: {title}').replace('{title}', result.title)} · ${price}${demo ? ` · ${demo.badge} · ${demo.unavailable}` : ''}`);
       button.setAttribute('role', 'button');
       button.setAttribute('aria-haspopup', 'dialog');
       button.setAttribute('aria-expanded', 'false');
       button.dataset.selected = 'false';
       const label = document.createElement('span');
       label.className = 'needs-map-price-label';
-      label.textContent = price;
+      label.textContent = demo ? `${locale === 'el' ? 'Δείγμα' : 'Demo'} · ${price}` : price;
       button.appendChild(label);
       button.addEventListener('click', event => {
         event.stopPropagation();
@@ -305,12 +369,13 @@ export function Map({ results, live = false }: MapProps) {
 
   return (
     <>
-      <div className="relative h-full w-full">
-        <div ref={mapContainer} aria-label={t('map.title', 'Listings on the map')} aria-hidden={mapError || undefined} className={`h-full w-full [&_.mapboxgl-ctrl-group_button]:h-11 [&_.mapboxgl-ctrl-group_button]:w-11 ${mapError ? 'invisible' : ''}`} />
+      <div className="relative h-full w-full" data-map-status={status} data-map-error={mapError || undefined} aria-busy={status === 'loading'}>
+        <div ref={mapContainer} aria-label={t('map.title', 'Listings on the map')} aria-hidden={Boolean(mapError) || undefined} className={`h-full w-full [&_.mapboxgl-ctrl-group_button]:h-11 [&_.mapboxgl-ctrl-group_button]:w-11 ${mapError ? 'invisible' : ''}`} />
+        {status === 'loading' && <p role="status" className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/90 p-4 text-sm text-muted-foreground">{t('map.loading', 'Loading map…')}</p>}
         {mapError && (
-          <div role="status" className="absolute inset-0 flex items-center justify-center rounded-lg bg-muted p-6 text-center">
+          <div role="status" className="absolute inset-0 flex items-center justify-center overflow-auto rounded-lg bg-muted p-4 text-center">
             <div className="max-w-sm space-y-3">
-              <p className="font-medium text-foreground">{t('map.unavailable', 'The map is temporarily unavailable')}</p>
+              <p className="font-medium text-foreground">{mapError === 'unsupported' ? t('map.unsupported', 'This browser cannot display the map') : t('map.unavailable', 'The map is temporarily unavailable')}</p>
               <p className="text-sm text-muted-foreground">{t('map.unavailableHint', 'You can still explore the listings in the results.')}</p>
               <Button variant="outline" onClick={() => setAttempt(value => value + 1)}>{t('map.retry', 'Try again')}</Button>
             </div>
@@ -318,7 +383,7 @@ export function Map({ results, live = false }: MapProps) {
         )}
         {live && listingsError && !mapError && <p role="status" className="absolute bottom-10 left-3 right-3 rounded-lg bg-background/95 p-3 text-sm shadow">{t('map.listingsError', 'Nearby listings could not be refreshed. Move the map to try again.')}</p>}
       </div>
-      {popupTarget && selected && !mapError && createPortal(<MapListingPreview key={selected.id} listing={selected} onClose={closePreview} />, popupTarget)}
+      {popupTarget && selected && !mapError && createPortal(<MapListingPreview key={selected.id} listing={selected} onClose={closePreview} returnTo={returnTo} />, popupTarget)}
     </>
   );
 }

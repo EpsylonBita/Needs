@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-import Image from 'next/image'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import { MapPin, UserRound } from 'lucide-react'
 
 import { supabase } from '@/lib/supabase/client'
 import { withCsrfHeaders } from '@/lib/utils/csrf'
@@ -12,15 +12,19 @@ import { useAuth } from '@/contexts/auth-context'
 import { useI18n } from '@/contexts/i18n-context'
 import { Button } from '@/components/ui/button'
 import { orderMoney } from '@/components/features/orders/order-copy'
-import { formatPublishedListingPrice } from '@/lib/listings/price-policy'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { ListingCard } from '@/components/features/search/search-results'
+import { demoListingCopy, isDemoListing } from '@/lib/listings/demo-policy'
+import type { SearchListing } from '@/components/features/search/use-listing-search'
+import { publicProfileCopy } from '@/components/features/profile/public-profile-copy'
 
 const copies = {
   en: { user: 'NEEDS member', reputation: 'Reputation', rating: 'Rating', noReviews: 'No reviews', dashboard: 'Dashboard', listings: 'Listings', title: 'Title', price: 'Price', status: 'Status', noListings: 'No public listings.', active: 'Available', sold: 'Sold', paused: 'Paused', closed: 'Closed', unavailableStatus: 'Unavailable', review: 'Leave a Review', payment: 'Completed payment', comment: 'Review comment', optional: 'Comment (optional)', submit: 'Submit Review', submitting: 'Submitting…', submitted: 'Your review was submitted.', integer: 'Choose an integer rating from 1 to 5.', session: 'Your session changed. Sign in again before submitting your review.', submitError: 'Could not submit your review. Try again.', paymentsError: 'Could not load your completed payments. Refresh and try again.', reviewsError: 'Could not load your previous reviews. Refresh and try again.', loading: 'Loading profile…', loadError: 'This profile could not be loaded. Try again.', unavailable: 'This profile is not available.', retry: 'Try again', browse: 'Explore listings', duplicate: 'You have already reviewed this payment.' },
   el: { user: 'Μέλος του NEEDS', reputation: 'Φήμη', rating: 'Βαθμολογία', noReviews: 'Χωρίς αξιολογήσεις', dashboard: 'Πίνακας ελέγχου', listings: 'Αγγελίες', title: 'Τίτλος', price: 'Τιμή', status: 'Κατάσταση', noListings: 'Δεν υπάρχουν δημόσιες αγγελίες.', active: 'Διαθέσιμη', sold: 'Πωλήθηκε', paused: 'Σε παύση', closed: 'Έκλεισε', unavailableStatus: 'Μη διαθέσιμη', review: 'Γράψε αξιολόγηση', payment: 'Ολοκληρωμένη πληρωμή', comment: 'Σχόλιο αξιολόγησης', optional: 'Σχόλιο (προαιρετικό)', submit: 'Υποβολή αξιολόγησης', submitting: 'Υποβολή…', submitted: 'Η αξιολόγησή σου υποβλήθηκε.', integer: 'Επίλεξε ακέραιη βαθμολογία από 1 έως 5.', session: 'Η σύνδεσή σου άλλαξε. Συνδέσου ξανά πριν υποβάλεις αξιολόγηση.', submitError: 'Η αξιολόγηση δεν υποβλήθηκε. Δοκίμασε ξανά.', paymentsError: 'Οι ολοκληρωμένες πληρωμές σου δεν φορτώθηκαν. Ανανέωσε και δοκίμασε ξανά.', reviewsError: 'Οι προηγούμενες αξιολογήσεις σου δεν φορτώθηκαν. Ανανέωσε και δοκίμασε ξανά.', loading: 'Φόρτωση προφίλ…', loadError: 'Το προφίλ δεν φορτώθηκε. Δοκίμασε ξανά.', unavailable: 'Αυτό το προφίλ δεν είναι διαθέσιμο.', retry: 'Δοκίμασε ξανά', browse: 'Αναζήτηση αγγελιών', duplicate: 'Έχεις ήδη αξιολογήσει αυτή την πληρωμή.' },
 }
 
-type ProfileRow = { id: string; display_name?: string; avatar_url?: string; reputation?: number }
-type ListingRow = { id: string; title: string; description?: string; main_category?: string; sub_category?: string; price: number; status: string }
+type ProfileRow = { id: string; display_name?: string; avatar_url?: string; title?: string; bio?: string; location?: string; created_at?: string }
+type ListingRow = SearchListing & { status: string }
 type ReviewPayment = { id: string; listing_id: string; title: string; amount: number; currency: string }
 
 export default function PublicProfilePage() {
@@ -37,12 +41,14 @@ function ProfileContent({ id, viewerId }: { id: string; viewerId?: string }) {
   const { locale } = useI18n()
   const language = locale === 'el' ? 'el' : 'en'
   const copy = copies[language]
+  const publicCopy = publicProfileCopy[language]
   const [profile, setProfile] = useState<ProfileRow | null>(null)
   const [rating, setRating] = useState<{ avg: number; count: number } | null>(null)
   const [listings, setListings] = useState<ListingRow[]>([])
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
+  const [isOwner, setIsOwner] = useState(false)
   const [eligiblePayments, setEligiblePayments] = useState<ReviewPayment[]>([])
   const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(null)
   const [reviewRating, setReviewRating] = useState<number>(5)
@@ -62,7 +68,8 @@ function ProfileContent({ id, viewerId }: { id: string; viewerId?: string }) {
       setReviewSubmitted(false)
       setReviewError(null)
       setSubmittingReview(false)
-      const { data: p, error: profileError } = await supabase.from('profiles').select('id,display_name,avatar_url,reputation').eq('id', id).single()
+      setIsOwner(false)
+      const { data: p, error: profileError } = await supabase.from('profiles').select('id,display_name,avatar_url,title,bio,location,created_at').eq('id', id).single()
       if (cancelled) return
       if (profileError && profileError.code !== 'PGRST116') throw profileError
       setProfile(p)
@@ -81,8 +88,10 @@ function ProfileContent({ id, viewerId }: { id: string; viewerId?: string }) {
       }
       const { data: ls, error: listingsError } = await supabase
         .from('listings')
-        .select('id,title,description,main_category,sub_category,price,status')
+        .select('id,title,description,main_category,sub_category,price,status,seller_id,address,listing_images(url,main)')
         .eq('seller_id', id)
+        .eq('status', 'active')
+        .eq('moderation_suspended', false)
         .order('created_at', { ascending: false })
       if (cancelled) return
       if (listingsError) throw listingsError
@@ -95,6 +104,8 @@ function ProfileContent({ id, viewerId }: { id: string; viewerId?: string }) {
         const { data: me } = await supabase.from('profiles').select('id').eq('user_id', uid).limit(1).single()
         if (cancelled) return
         if (me?.id) {
+          setIsOwner(me.id === id)
+          if (me.id === id) return
           const { data: pays, error: paymentsError } = await supabase
             .from('payments')
             .select('id,listing_id,amount,currency')
@@ -144,54 +155,34 @@ function ProfileContent({ id, viewerId }: { id: string; viewerId?: string }) {
   return (
     <div className="needs-shell needs-page space-y-6">
       <div className="flex flex-wrap items-center gap-4 justify-between">
-        <div className="h-16 w-16 rounded-full bg-muted overflow-hidden relative">
-          {profile?.avatar_url && (
-            <Image
-              src={profile.avatar_url}
-              alt=""
-              fill
-              sizes="64px"
-              className="object-cover rounded-full"
-            />
-          )}
-        </div>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold">{profile?.display_name || copy.user}</h1>
-          <div className="text-sm text-muted-foreground">{copy.reputation}: {Number(profile?.reputation || 0).toLocaleString(language, { maximumFractionDigits: 2 })}</div>
+        <Avatar className="h-16 w-16"><AvatarImage src={profile.avatar_url} alt="" className="object-cover" /><AvatarFallback><UserRound aria-hidden="true" className="h-7 w-7" /></AvatarFallback></Avatar>
+        <div className="min-w-0 flex-1 space-y-2">
+          <h1 className="break-words text-2xl font-bold">{profile.display_name || copy.user}</h1>
+          {profile.title && <p className="break-words font-medium">{profile.title}</p>}
+          {profile.location && <p className="flex items-center gap-2 text-sm text-muted-foreground"><MapPin aria-hidden="true" className="h-4 w-4 shrink-0" /><span className="break-words">{profile.location}</span></p>}
+          {profile.created_at && Number.isFinite(Date.parse(profile.created_at)) && <p className="text-sm text-muted-foreground">{publicCopy.memberSince.replace('{date}', new Intl.DateTimeFormat(language, { month: 'long', year: 'numeric' }).format(new Date(profile.created_at)))}</p>}
           {rating && (
-            <div className="text-sm text-muted-foreground">{copy.rating}: {rating.count > 0 ? rating.avg.toLocaleString(language, { maximumFractionDigits: 2 }) : copy.noReviews} ({rating.count})</div>
+            <div className="text-sm text-muted-foreground">{rating.count > 0 ? `${copy.rating}: ${rating.avg.toLocaleString(language, { maximumFractionDigits: 2 })} / 5 (${rating.count})` : copy.noReviews}</div>
           )}
         </div>
-        <div>
+        {isOwner && <div>
           <Link href="/dashboard" className="inline-flex min-h-11 items-center px-3 py-2 rounded-md bg-primary text-primary-foreground">{copy.dashboard}</Link>
-        </div>
+        </div>}
+      </div>
+      {profile.bio && <p className="max-w-3xl whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">{profile.bio}</p>}
+      <div className="max-w-3xl space-y-2 text-sm leading-relaxed text-muted-foreground">
+        <p>{rating?.count ? publicCopy.reviewBasis : publicCopy.noHistory}</p>
+        <details><summary className="w-fit cursor-pointer rounded-sm py-2 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{publicCopy.reputationHeading}</summary><p className="mt-1">{publicCopy.reputationExplanation}</p></details>
       </div>
 
       <div>
         <h2 className="text-xl font-semibold">{copy.listings}</h2>
-        <div className="mt-2 overflow-x-auto border rounded-xl">
-          <table className="w-full text-sm">
-            <caption className="sr-only">{copy.listings}</caption>
-            <thead>
-              <tr className="text-left">
-                <th scope="col" className="p-3">{copy.title}</th>
-                <th scope="col" className="p-3">{copy.price}</th>
-                <th scope="col" className="p-3">{copy.status}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {listings.map((l) => (
-                <tr key={l.id} className="border-t">
-                  <td className="p-3"><Link className="inline-flex min-h-11 items-center text-primary" href={`/listings/${encodeURIComponent(l.id)}`}>{l.title}</Link></td>
-                  <td className="whitespace-nowrap p-3">{formatPublishedListingPrice(Number(l.price), l.description, language, l.main_category, l.sub_category)}</td>
-                  <td className="p-3">{({ active: copy.active, sold: copy.sold, paused: copy.paused, inactive: copy.paused, closed: copy.closed } as Record<string, string>)[l.status] || copy.unavailableStatus}</td>
-                </tr>
-              ))}
-              {listings.length === 0 && (
-                <tr><td className="p-3" colSpan={3}>{copy.noListings}</td></tr>
-              )}
-            </tbody>
-          </table>
+        <div className="mt-4 grid min-w-0 gap-5 lg:grid-cols-2">
+          {listings.map((listing, index) => <div key={listing.id} className="min-w-0 space-y-2">
+            <ListingCard listing={listing} index={index} />
+            <p className="px-1 text-xs font-medium text-muted-foreground">{isDemoListing(listing.id) ? demoListingCopy[locale === 'el' ? 'el' : 'en'].unavailable : ({ active: copy.active, sold: copy.sold, paused: copy.paused, inactive: copy.paused, closed: copy.closed } as Record<string, string>)[listing.status] || copy.unavailableStatus}</p>
+          </div>)}
+          {listings.length === 0 && <p className="py-4 text-sm text-muted-foreground">{copy.noListings}</p>}
         </div>
       </div>
 

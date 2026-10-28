@@ -100,10 +100,17 @@ export async function searchListings(filters: ReturnType<typeof parseSearchQuery
   const rows = (data || []) as unknown as Array<Record<string, unknown> & { location?: unknown }>;
   const sellerIds = [...new Set(rows.map(row => row.seller_id).filter((id): id is string => typeof id === 'string'))];
   const ratings = new Map<string, { sum: number; count: number }>();
+  const publishers = new Map<string, { display_name?: string; avatar_url?: string; title?: string }>();
   if (sellerIds.length) {
-    const { data: reviews } = await supabase.from('reviews').select('seller_id,rating').in('seller_id', sellerIds);
+    const [{ data: reviews, error: reviewsError }, { data: profiles }] = await Promise.all([
+      supabase.from('reviews').select('seller_id,rating').in('seller_id', sellerIds),
+      // Explicit public fields only: never select email, phone or account metadata.
+      supabase.from('profiles').select('id,display_name,avatar_url,title').in('id', sellerIds),
+    ]);
+    for (const profile of profiles || []) publishers.set(profile.id, profile);
+    if (!reviewsError) for (const sellerId of sellerIds) ratings.set(sellerId, { sum: 0, count: 0 });
     for (const review of reviews || []) {
-      if (typeof review.rating !== 'number') continue;
+      if (!Number.isInteger(review.rating) || review.rating < 1 || review.rating > 5) continue;
       const previous = ratings.get(review.seller_id) || { sum: 0, count: 0 };
       ratings.set(review.seller_id, { sum: previous.sum + review.rating, count: previous.count + 1 });
     }
@@ -112,7 +119,11 @@ export async function searchListings(filters: ReturnType<typeof parseSearchQuery
     ...row,
     coordinates: listingCoordinates(row.location),
     location: undefined,
-    sellerRating: typeof row.seller_id === 'string' && ratings.has(row.seller_id)
+    sellerName: typeof row.seller_id === 'string' ? publishers.get(row.seller_id)?.display_name || undefined : undefined,
+    sellerAvatarUrl: typeof row.seller_id === 'string' ? publishers.get(row.seller_id)?.avatar_url || undefined : undefined,
+    sellerTitle: typeof row.seller_id === 'string' ? publishers.get(row.seller_id)?.title || undefined : undefined,
+    sellerReviewCount: typeof row.seller_id === 'string' ? ratings.get(row.seller_id)?.count : undefined,
+    sellerRating: typeof row.seller_id === 'string' && (ratings.get(row.seller_id)?.count || 0) > 0
       ? ratings.get(row.seller_id)!.sum / ratings.get(row.seller_id)!.count : undefined,
   }));
   return {

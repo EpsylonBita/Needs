@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { usePathname, useSearchParams } from 'next/navigation';
 
 import { ArrowLeft, ArrowRight, MapPin, Package, Search, TriangleAlert } from 'lucide-react';
 
@@ -10,6 +11,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useI18n } from '@/contexts/i18n-context';
 import { useSearchState } from '@/hooks/use-search-state';
 import { formatPublishedListingPrice, listingPriceNeedsConfirmation } from '@/lib/listings/price-policy';
+import { NewListingButton } from '@/components/features/ads/new-listing-button';
+import { searchCenter } from '@/lib/search/location';
+import { safeInternalPath } from '@/lib/auth/return-path';
+import { DemoListingNotice } from '@/components/features/listings/demo-listing-notice';
 
 import { SearchMap } from './search-map';
 import { useListingSearch, type SearchListing } from './use-listing-search';
@@ -26,7 +31,7 @@ const subcategories: Record<string, string[]> = {
   Services: ['I want', 'I will', 'I can'],
 };
 
-function ListingCard({ listing, index }: { listing: SearchListing; index: number }) {
+export function ListingCard({ listing, index, returnTo }: { listing: SearchListing; index: number; returnTo?: string }) {
   const { t, locale } = useI18n();
   const [failedImage, setFailedImage] = useState<string | null>(null);
   const imageUrl = listing.listing_images?.find(image => image.main)?.url || listing.listing_images?.[0]?.url;
@@ -38,7 +43,8 @@ function ListingCard({ listing, index }: { listing: SearchListing; index: number
     Sell: t('searchModern.sell', 'Sell'), Buy: t('searchModern.buy', 'Buy'), Free: t('searchModern.free', 'Free'),
     'I want': t('searchModern.want', 'I want'), 'I will': t('searchModern.will', 'I will'), 'I can': t('searchModern.can', 'I can'),
   };
-  return <Link href={`/listings/${encodeURIComponent(listing.id)}`} style={{ animationDelay: `${Math.min(index, 4) * 30}ms` }} className="needs-search-result-card needs-result-arrival group min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+  const href = `/listings/${encodeURIComponent(listing.id)}` + (returnTo ? `?returnTo=${encodeURIComponent(safeInternalPath(returnTo, '/search'))}` : '');
+  return <Link href={href} style={{ animationDelay: `${Math.min(index, 4) * 30}ms` }} className="needs-search-result-card needs-result-arrival group min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
     <div className="needs-search-result-media flex items-center justify-center">
       {safeImage
         // Stored listing images are served directly from their public storage URL.
@@ -48,7 +54,8 @@ function ListingCard({ listing, index }: { listing: SearchListing; index: number
     </div>
     <div className="needs-search-result-body">
       <h3 className="line-clamp-2 group-hover:text-primary">{listing.title}</h3>
-      {typeof listing.price === 'number' && <span className={`needs-search-result-price${priceNeedsConfirmation ? ' needs-search-result-price--confirmation' : ''}`}>{listing.price === 0 && !priceNeedsConfirmation ? t('searchModern.free', 'Free') : formatPublishedListingPrice(listing.price, listing.description, locale, listing.main_category, listing.sub_category)}</span>}
+      <DemoListingNotice id={listing.id} locale={locale} />
+      {typeof listing.price === 'number' && <span className={`needs-search-result-price${priceNeedsConfirmation ? ' needs-search-result-price--confirmation' : ''}`}>{formatPublishedListingPrice(listing.price, listing.description, locale, listing.main_category, listing.sub_category)}</span>}
       <div className="needs-search-result-category">
         <span>{categories[listing.main_category] || listing.main_category}</span><span aria-hidden="true">·</span><span>{categories[listing.sub_category] || listing.sub_category}</span>
       </div>
@@ -60,6 +67,10 @@ function ListingCard({ listing, index }: { listing: SearchListing; index: number
 
 export function SearchResults({ query, radiusMeters, fixedCategory }: SearchResultsProps) {
   const state = useSearchState();
+  const pathname = usePathname() || '/search';
+  const urlParams = useSearchParams();
+  const returnTo = pathname + (urlParams?.size ? `?${urlParams.toString()}` : '');
+  const [mapStatus, setMapStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const { t, locale } = useI18n();
   const searchQuery = query ?? state.query.value;
   const category = fixedCategory || state.category.value;
@@ -76,13 +87,16 @@ export function SearchResults({ query, radiusMeters, fixedCategory }: SearchResu
   // The list and map always share one response. Do not leave old pins visible while filters change.
   const results = !isLoading && !error ? data?.listings || EMPTY_LISTINGS : EMPTY_LISTINGS;
 
-  return <div className="needs-search-workspace">
+  const center = searchCenter(coordinates);
+  return <div className={`needs-search-workspace${mapStatus === 'error' ? ' needs-search-workspace--map-unavailable' : ''}`}>
     <section aria-label={t('searchModern.resultsLabel', 'Search results')} className="needs-search-list min-w-0 space-y-5" aria-busy={isLoading}>
       <div className="flex flex-wrap items-end justify-between gap-2">
         <h2 className="text-lg font-semibold">{searchQuery ? <>{t('searchModern.resultsFor', 'Results for')} <span className="break-words text-primary">“{searchQuery}”</span></> : t('searchModern.browse', 'Explore the listings')}</h2>
         {!isLoading && !error && <p className="text-sm text-muted-foreground" aria-live="polite">{data?.pagination.total === 1 ? t('searchModern.oneResult', '1 listing') : t('searchModern.resultCount', '{count} listings').replace('{count}', String(data?.pagination.total ?? 0))}</p>}
       </div>
-      {!coordinates && <p className="flex gap-2 text-sm leading-relaxed text-muted-foreground"><MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />{t('searchModern.allLocations', 'Showing all locations. Choose “Use my location” in filters to search nearby.')}</p>}
+      {!isLoading && !error && <p className="flex gap-2 text-sm leading-relaxed text-muted-foreground" data-testid="applied-location"><MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />{data?.locationApplied && center
+        ? t('searchModern.appliedArea', '{area} · within {distance} km').replace('{area}', state.locationLabel.value || t('searchModern.selectedPoint', 'Selected location') + ` (${center[1].toFixed(3)}, ${center[0].toFixed(3)})`).replace('{distance}', parameters.get('distance') || '')
+        : t('searchModern.allLocations', 'All locations · no distance filter')}</p>}
 
       {isLoading ? <div><p role="status" className="mb-4 text-sm text-muted-foreground">{t('search.searching', 'Searching...')}</p><div className="space-y-3" aria-hidden="true">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-40 rounded-2xl" />)}</div></div>
         : error ? <div role="alert" className="rounded-2xl border border-border bg-card px-5 py-10 text-center">
@@ -95,8 +109,9 @@ export function SearchResults({ query, radiusMeters, fixedCategory }: SearchResu
           <h3 className="text-xl font-semibold">{t('searchModern.emptyTitle', 'A fresh search could help.')}</h3>
           <p role="status" className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-muted-foreground">{t('searchModern.emptyDescription', 'No listings match your search. Try fewer keywords, remove a tag or widen the distance.')}</p>
           <Button variant="outline" className="mt-6 h-12 rounded-xl" onClick={() => state.reset()}>{t('searchModern.clearFilters', 'Clear search and filters')}</Button>
+          <div className="mt-3"><NewListingButton intent="request" initialDraft={{ query: searchQuery, category: category === 'Services' ? 'Services' : 'Items', tags: state.tags.value.filter(Boolean), coordinates: center ? coordinates : '', location: center ? state.locationLabel.value : '' }} className="h-auto min-h-12 max-w-full whitespace-normal rounded-xl px-5 py-3">{t('searchModern.publishNeed', 'Didn’t find it? Post what you need')}</NewListingButton></div>
         </div>
-        : <div className="needs-search-result-list">{results.map((listing, index) => <ListingCard key={listing.id} listing={listing} index={index} />)}</div>}
+        : <div className="needs-search-result-list">{results.map((listing, index) => <ListingCard key={listing.id} listing={listing} index={index} returnTo={returnTo} />)}</div>}
 
       {!isLoading && !error && data && (data.pagination.totalPages > 1 || state.page.value > 1) && <nav aria-label={t('searchModern.pagination', 'Search result pages')} className="needs-search-pagination">
         <Button variant="outline" className="h-11 rounded-xl" disabled={state.page.value <= 1} onClick={() => state.page.set(Math.min(state.page.value - 1, data.pagination.totalPages || 1))}><ArrowLeft className="mr-2 h-4 w-4" aria-hidden="true" />{t('common.previous', 'Previous')}</Button>
@@ -104,6 +119,6 @@ export function SearchResults({ query, radiusMeters, fixedCategory }: SearchResu
         <Button variant="outline" className="h-11 rounded-xl" disabled={state.page.value >= data.pagination.totalPages} onClick={() => state.page.set(state.page.value + 1)}>{t('common.next', 'Next')}<ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" /></Button>
       </nav>}
     </section>
-    <SearchMap listings={results} isLoading={isLoading} />
+    <SearchMap listings={results} isLoading={isLoading} onStatusChange={setMapStatus} returnTo={returnTo} />
   </div>;
 }

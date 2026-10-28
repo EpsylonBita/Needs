@@ -4,6 +4,28 @@ import { listingCoordinates, parseSearchQuery, searchListings } from '@/app/api/
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe('Search transport contract', () => {
+  it('returns only public publisher fields and real review counts', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://search-test.supabase.co');
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'test-public-key');
+    const request = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = new URL(String(input));
+      const rows = url.pathname.endsWith('/listings')
+        ? [{ id: 'listing', seller_id: 'publisher', title: 'Guitar' }, { id: 'other', seller_id: 'new-member', title: 'Piano' }]
+        : url.pathname.endsWith('/reviews')
+          ? [{ seller_id: 'publisher', rating: 5 }, { seller_id: 'publisher', rating: 3 }]
+          : [{ id: 'publisher', display_name: 'Maria', title: 'Teacher', avatar_url: '/avatar.png', email: 'must-not-return@example.invalid', phone: 'must-not-return' }];
+      return new Response(JSON.stringify(rows), { status: 200, headers: { 'Content-Type': 'application/json', 'Content-Range': '0-1/2' } });
+    });
+    vi.stubGlobal('fetch', request);
+    const response = await searchListings(parseSearchQuery(new URLSearchParams()));
+    const profileRequest = request.mock.calls.map(([url]) => new URL(String(url))).find(url => url.pathname.endsWith('/profiles'))!;
+    expect(profileRequest.searchParams.get('select')).toBe('id,display_name,avatar_url,title');
+    expect(response.listings[0]).toMatchObject({ sellerName: 'Maria', sellerTitle: 'Teacher', sellerAvatarUrl: '/avatar.png', sellerRating: 4, sellerReviewCount: 2 });
+    expect(response.listings[1]).toMatchObject({ sellerReviewCount: 0 });
+    expect(response.listings[1].sellerRating).toBeUndefined();
+    expect(JSON.stringify(response)).not.toContain('must-not-return');
+  });
+
   it('uses the public key and encoded filters with a literal query rather than executable filter grammar', async () => {
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://search-test.supabase.co');
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'test-public-key');

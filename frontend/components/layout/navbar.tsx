@@ -15,6 +15,8 @@ import { useAuth } from '@/contexts/auth-context';
 import { useI18n } from '@/contexts/i18n-context';
 import { supabase } from '@/lib/supabase/client';
 import { useUnreadNotifications } from '@/lib/notifications/use-unread-notifications';
+import { clearAuthContinuation } from '@/lib/auth/return-path';
+import { clearPendingPublication, isPublicationDraftCurrent, readPendingPublication, savePendingPublication, type PendingPublication } from '@/lib/listings/publication-intent';
 const CreateAdDialog = dynamic(() => import('@/components/features/ads/create-ad-dialog').then(module => module.CreateAdDialog));
 export function Navbar() {
   const { user, isLoading } = useAuth();
@@ -24,9 +26,33 @@ export function Navbar() {
   const [menu, setMenu] = useState(false);
   const [create, setCreate] = useState(false);
   const [createAfterLogin, setCreateAfterLogin] = useState(false);
+  const [authCompleted, setAuthCompleted] = useState(false);
+  const [draft, setDraft] = useState<PendingPublication | undefined>();
   const [adminAccess, setAdminAccess] = useState({ userId: '', admin: false });
   const notifications = useUnreadNotifications();
   const userId = user?.id;
+  useEffect(() => {
+    if (!authCompleted || !userId) return;
+    const pending = draft && isPublicationDraftCurrent(draft, userId) ? draft : readPendingPublication(userId);
+    // Complete the auth callback after the verified account reaches context.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (createAfterLogin || pending) { setDraft(pending ?? undefined); setCreate(true); clearAuthContinuation(); }
+    setCreateAfterLogin(false); setAuthCompleted(false);
+  }, [authCompleted, userId, draft, createAfterLogin]);
+  useEffect(() => {
+    if (isLoading) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('resumeListing') !== '1') return;
+    const pending = readPendingPublication(userId);
+    url.searchParams.delete('resumeListing');
+    window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    if (!pending) return;
+    // Restore the explicitly requested action from browser storage after hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDraft(pending);
+    if (userId) { setCreate(true); clearAuthContinuation(); }
+    else { setCreateAfterLogin(true); setSignIn(true); }
+  }, [pathname, userId, isLoading]);
   useEffect(() => {
     if (!userId) return;
     const controller = new AbortController();
@@ -74,6 +100,7 @@ export function Navbar() {
               {!user && <Button variant="outline" onClick={() => { setMenu(false); setSignIn(true); }}>{t('navbar.login', 'Sign in')}</Button>}</div>
             <Button className="mt-5 w-full" disabled={isLoading} onClick={() => {
               setMenu(false);
+              setDraft(savePendingPublication({ returnTo: window.location.pathname + window.location.search }, userId));
               if (user) setCreate(true);
               else { setCreateAfterLogin(true); setSignIn(true); }
             }}>{t('modern.newListing', 'New listing')}</Button>
@@ -81,11 +108,10 @@ export function Navbar() {
         </Sheet>
       </div>
     </nav></header>
-    <AuthDialog isOpen={signIn} onClose={() => { setSignIn(false); setCreateAfterLogin(false); }} onAuthenticated={() => {
+    <AuthDialog isOpen={signIn} purpose={createAfterLogin ? draft?.intent ?? 'listing' : undefined} onNavigateAway={() => { setSignIn(false); setCreateAfterLogin(false); }} onAwaitingConfirmation={() => { setSignIn(false); setCreateAfterLogin(false); }} onClose={() => { setSignIn(false); setCreateAfterLogin(false); setDraft(undefined); clearPendingPublication(); clearAuthContinuation(); }} onAuthenticated={() => {
       setSignIn(false);
-      if (createAfterLogin) setCreate(true);
-      setCreateAfterLogin(false);
+      setAuthCompleted(true);
     }} />
-    {create && <CreateAdDialog open={create} onOpenChange={setCreate} />}
+    {create && <CreateAdDialog open={create} initialDraft={draft} onOpenChange={open => { setCreate(open); if (!open) { setDraft(undefined); clearPendingPublication(); clearAuthContinuation(); } }} />}
   </>;
 }

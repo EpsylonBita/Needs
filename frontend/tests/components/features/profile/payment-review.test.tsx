@@ -8,12 +8,13 @@ const state = vi.hoisted(() => ({
   profileLoad: vi.fn(),
   profileId: 'actual-provider',
   currentUser: 'auth-payer' as string | null,
+  ownProfileId: 'payer',
   sessionUser: 'auth-payer',
   locale: 'en',
   listings: [] as { id: string; title: string; price: number; status: string }[],
   listingsError: false,
 }))
-vi.mock('@/contexts/i18n-context', () => ({ useI18n: () => ({ locale: state.locale }) }))
+vi.mock('@/contexts/i18n-context', () => ({ useI18n: () => ({ locale: state.locale, t: (_key: string, fallback: string) => fallback }) }))
 vi.mock('next/navigation', () => ({ useParams: () => ({ id: state.profileId }) }))
 vi.mock('@/contexts/auth-context', () => ({ useAuth: () => ({ user: state.currentUser ? { id: state.currentUser } : null }) }))
 vi.mock('@/lib/utils/csrf', () => ({ withCsrfHeaders: async (headers: Record<string, string>) => ({ ...headers, 'X-CSRF-Token': 'csrf' }) }))
@@ -27,7 +28,7 @@ vi.mock('@/lib/supabase/client', () => ({ supabase: {
       select: (value: string) => { columns = value; return chain },
       eq: (column: string, value: string) => { if (column === 'user_id') isOwnProfile = true; if (column === 'id') profileId = value; return chain },
       order: () => chain, limit: () => chain, in: () => chain,
-      single: async () => isOwnProfile ? { data: { id: 'payer' }, error: null } : state.profileLoad(profileId),
+      single: async () => isOwnProfile ? { data: { id: state.ownProfileId }, error: null } : state.profileLoad(profileId),
       then: (resolve: (value: unknown) => unknown) => Promise.resolve({
         data: table === 'payments' ? state.payments : table === 'reviews' && columns === 'payment_id' ? state.reviewed : table === 'listings' ? state.listings : [],
         error: table === 'listings' && state.listingsError ? new Error('Offline') : null,
@@ -44,6 +45,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   state.profileId = 'actual-provider'
   state.currentUser = 'auth-payer'
+  state.ownProfileId = 'payer'
   state.sessionUser = 'auth-payer'
   state.locale = 'en'
   state.listings = []
@@ -60,6 +62,26 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Public profile reviews use the actual completed payment', () => {
+  it('shows public details and neutral review history without visitor management controls', async () => {
+    state.currentUser = null
+    state.profileLoad.mockResolvedValue({ data: { id: 'actual-provider', display_name: 'Maria', title: 'Music teacher', bio: 'Piano lessons', location: 'Athens', created_at: '2026-01-01T12:00:00Z', reputation: 0 }, error: null })
+    render(<PublicProfilePage />)
+    expect(await screen.findByRole('heading', { name: 'Maria' })).toBeInTheDocument()
+    expect(screen.getByText('Music teacher')).toBeInTheDocument()
+    expect(screen.getByText('Piano lessons')).toBeInTheDocument()
+    expect(screen.getByText('Member since January 2026')).toBeInTheDocument()
+    expect(screen.getByText('No reviews')).toBeInTheDocument()
+    expect(screen.queryByText(/Reputation: 0/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Dashboard' })).not.toBeInTheDocument()
+  })
+
+  it('shows the management destination only on the signed-in owner profile', async () => {
+    state.ownProfileId = 'actual-provider'
+    render(<PublicProfilePage />)
+    expect(await screen.findByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/dashboard')
+    expect(screen.queryByRole('button', { name: 'Submit Review' })).not.toBeInTheDocument()
+  })
+
   it('does not invent an empty member profile when the profile is unavailable', async () => {
     state.profileLoad.mockResolvedValue({ data: null, error: { code: 'PGRST116' } })
     render(<PublicProfilePage />)
@@ -82,7 +104,7 @@ describe('Public profile reviews use the actual completed payment', () => {
     state.locale = 'el'
     state.listings = [{ id: 'listing', title: 'Ποδήλατο', price: 25, status: 'active' }]
     render(<PublicProfilePage />)
-    expect(await screen.findByRole('link', { name: 'Ποδήλατο' })).toHaveAttribute('href', '/listings/listing')
+    expect(await screen.findByRole('link', { name: /Ποδήλατο/ })).toHaveAttribute('href', '/listings/listing')
     expect(screen.getByText('Διαθέσιμη')).toBeInTheDocument()
     expect(screen.queryByText('active')).not.toBeInTheDocument()
     expect(screen.getByText(/25,00.*€/)).toBeInTheDocument()
@@ -161,7 +183,7 @@ describe('Public profile reviews use the actual completed payment', () => {
     expect(pendingSignal.aborted).toBe(true)
     await act(async () => { finishReview({ ok: true, json: async () => ({ success: true, reviewId: 'old-review' }) }) })
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
-    expect(screen.getByText('Rating: No reviews (0)')).toBeInTheDocument()
+    expect(screen.getByText('No reviews')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Completed payment' })).toHaveValue(nextPayment)
     expect(screen.getByRole('textbox', { name: 'Review comment' })).toHaveValue('')
     expect(screen.getByRole('button', { name: 'Submit Review' })).toBeEnabled()

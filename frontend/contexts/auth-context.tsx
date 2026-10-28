@@ -4,6 +4,8 @@ import React, { createContext, useContext, useEffect, useRef, useState, ReactNod
 import { ErrorBoundary } from '@/components/common/error-boundary';
 import { ErrorFallback } from '@/components/common/error-fallbacks';
 import { authEmailRedirectUrl } from '@/lib/auth/email-links';
+import { bindAuthContinuation, clearAuthContinuation } from '@/lib/auth/return-path';
+import { bindPendingPublication, clearPendingPublication } from '@/lib/listings/publication-intent';
 import { supabase } from '@/lib/supabase/client';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 
@@ -34,6 +36,10 @@ interface AuthProviderProps {
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+function bindContinuation(accountId: string) {
+  bindPendingPublication(accountId);
+  bindAuthContinuation(accountId);
+}
 
 /**
  * Authentication context provider
@@ -60,6 +66,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const applySession = (account: SupabaseUser | null) => {
       const version = ++authVersion.current;
       if (profileTimer) clearTimeout(profileTimer);
+      if (account) bindContinuation(account.id);
       setUser(account ? sessionUser(account) : null);
       setIsInitialized(true);
       setIsLoading(false);
@@ -94,6 +101,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     initialize();
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (_event === 'SIGNED_OUT') { clearPendingPublication(); clearAuthContinuation(); }
       if (active) applySession(session?.user ?? null);
     });
     return () => {
@@ -110,7 +118,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       const { data: res, error: signInError } = await supabase.auth.signInWithPassword(data);
       if (signInError) throw signInError;
-      if (res.user) setUser(sessionUser(res.user));
+      if (res.user) { bindContinuation(res.user.id); setUser(sessionUser(res.user)); }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign in failed');
       throw err;
@@ -135,7 +143,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         },
       });
       if (signUpError) throw signUpError;
-      if (result.session?.user) setUser(sessionUser(result.session.user));
+      if (result.session?.user) { bindContinuation(result.session.user.id); setUser(sessionUser(result.session.user)); }
       return { requiresEmailConfirmation: !result.session };
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
@@ -150,6 +158,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setIsLoading(true);
       const { error: signOutError } = await supabase.auth.signOut();
       if (signOutError) throw signOutError;
+      clearPendingPublication(); clearAuthContinuation();
       ++authVersion.current;
       setUser(null);
     } catch (err) {

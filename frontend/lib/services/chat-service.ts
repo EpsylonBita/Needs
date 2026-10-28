@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase/client'
+import { DEMO_TRANSACTION_ERROR, isDemoListing } from '@/lib/listings/demo-policy'
 
 export type ChatParticipant = { profile_id: string; display_name: string | null; avatar_url: string | null; left_at: string | null }
 export type ChatMessage = {
@@ -118,6 +119,7 @@ export const leaveChat = (expectedUserId: string, chatId: string) => updateMembe
 export const rejoinChat = (expectedUserId: string, chatId: string) => updateMembership('rejoin_chat', expectedUserId, chatId)
 
 async function openChat(parameters: { p_listing_id?: string; p_other_profile_id?: string }, expectedUserId?: string, signal?: AbortSignal) {
+  if (isDemoListing(parameters.p_listing_id)) throw new Error(DEMO_TRANSACTION_ERROR)
   const user = await requireUser(expectedUserId, signal)
   // The three-argument overload rejects an account switch before creating anything.
   const result = await scopedRpc('get_or_create_direct_chat', {

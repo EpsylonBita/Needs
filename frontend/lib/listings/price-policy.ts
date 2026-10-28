@@ -8,6 +8,9 @@ export function listingPriceNeedsConfirmation(price: number, description: string
 }
 
 export function formatPublishedListingPrice(price: number, description: string | null | undefined, locale?: string, category?: string, subcategory?: string, options?: Intl.NumberFormatOptions): string {
+  if (price === 0 && category === 'Items' && subcategory === 'Free') {
+    return locale === 'el' ? 'Δωρεάν' : 'Free';
+  }
   if (listingPriceNeedsConfirmation(price, description, category, subcategory)) {
     return locale === 'el' ? 'Η τιμή χρειάζεται επιβεβαίωση' : 'Price needs confirmation';
   }

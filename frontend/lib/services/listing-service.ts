@@ -56,7 +56,7 @@ export function parseListingPrice(value: string | number | undefined): number {
   return price
 }
 
-export async function createListing(input: CreateListingInput) {
+export async function createListing(input: CreateListingInput, expectedUserId?: string, signal?: AbortSignal) {
   const priceNum = parseListingPrice(input.price)
   const allowedSubcategories = input.main_category === 'Items' ? ['Buy', 'Sell', 'Free'] : input.main_category === 'Services' ? ['I want', 'I will', 'I can'] : []
   if (!allowedSubcategories.includes(input.sub_category)) throw new Error('Choose a valid category and subcategory')
@@ -66,10 +66,7 @@ export async function createListing(input: CreateListingInput) {
     || Math.abs(input.coordinates[0]) > 180 || Math.abs(input.coordinates[1]) > 90) {
     throw new Error('Select a valid location on the map')
   }
-  const userRes = await supabase.auth.getUser()
-  if (userRes.error) throw userRes.error
-  const userId = userRes.data.user?.id
-  if (!userId) throw new Error('Not authenticated')
+  const userId = await requireListingUser(expectedUserId, signal)
 
   // Get profile id for seller
   const { data: profileRows, error: profileError } = await supabase
@@ -84,6 +81,7 @@ export async function createListing(input: CreateListingInput) {
   if (!profile?.id) throw new Error('Profile not found')
   const acceptsPayment = priceNum > 0 && ['Sell', 'I will', 'I can'].includes(input.sub_category)
   if (acceptsPayment && !profile?.stripe_account_id) throw new Error('Seller not onboarded')
+  await requireListingUser(userId, signal)
 
   const insertPayload: InsertPayload = {
     seller_id: profile.id,
@@ -98,16 +96,18 @@ export async function createListing(input: CreateListingInput) {
     contact_number: input.contact_number?.trim(),
   }
 
-  const { data: listing, error } = await supabase
+  let insertQuery = supabase
     .from('listings')
     .insert(insertPayload)
     .select('id')
-    .single()
+  if (signal) insertQuery = insertQuery.abortSignal(signal)
+  const { data: listing, error } = await insertQuery.single()
 
   if (error) throw error
   if (!listing?.id) throw new Error('Listing could not be saved')
 
   if (input.tags && input.tags.length > 0) {
+    await requireListingUser(userId, signal)
     const { error: tagError } = await supabase.from('listing_tags').insert(
       [...new Set(input.tags.map(tag => tag.trim()).filter(Boolean))].map((tag) => ({ listing_id: listing.id, tag }))
     )

@@ -1,8 +1,10 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { CreateAdDialog } from '@/components/features/ads/create-ad-dialog';
 import { CategoryTagsPicker } from '@/components/features/ads/category-tags-picker';
+import { readPendingPublication, savePendingPublication } from '@/lib/listings/publication-intent';
+import { readAuthContinuation } from '@/lib/auth/return-path';
 
 const boundary = vi.hoisted(() => ({ create: vi.fn(), fetch: vi.fn(), upload: vi.fn(), user: { id: 'auth-account', phoneNumber: '' } }));
 vi.mock('@/hooks/use-map', () => ({ useMap: () => ({ map: null, initializeMap: vi.fn(), updateMarker: vi.fn() }) }));
@@ -19,6 +21,7 @@ vi.mock('next/image', () => ({ default: ({ fill: _fill, unoptimized: _unoptimize
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   boundary.user = { id: 'auth-account', phoneNumber: '' };
   vi.stubEnv('NEXT_PUBLIC_MAPBOX_TOKEN', 'test-token');
   boundary.create.mockResolvedValue({ id: 'created-listing' });
@@ -40,6 +43,62 @@ function png(name = 'desk.png') {
 }
 
 describe('reviewing an automatically extracted listing draft', () => {
+  it('never submits the previous account draft after delayed geocoding finishes', async () => {
+    let finish!: (value: unknown) => void;
+    boundary.fetch.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const initialDraft = { intent: 'request' as const, query: 'Need guitar lessons', category: 'Services', location: 'Athens', returnTo: '/' };
+    const view = render(<CreateAdDialog open initialDraft={initialDraft} onOpenChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Skip photos' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Publish listing' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Publish listing' }));
+    await waitFor(() => expect(boundary.fetch).toHaveBeenCalled());
+    const signal = boundary.fetch.mock.calls[0][1].signal as AbortSignal;
+    boundary.user = { id: 'different-account', phoneNumber: '' };
+    view.rerender(<CreateAdDialog open initialDraft={initialDraft} onOpenChange={vi.fn()} />);
+    expect(signal.aborted).toBe(true);
+    await act(async () => finish({ ok: true, json: async () => ({ features: [{ center: [23.72, 37.98] }] }) }));
+    expect(boundary.create).not.toHaveBeenCalled();
+    expect(boundary.upload).not.toHaveBeenCalled();
+  });
+  it('keeps the draft after a failed fixture submission and clears it only after successful publication', async () => {
+    const initialDraft = savePendingPublication({ intent: 'request', query: 'Need guitar lessons', category: 'Services', location: 'Athens', coordinates: '23.72,37.98', returnTo: '/search?q=guitar' }, boundary.user.id);
+    boundary.create.mockRejectedValueOnce(new Error('Temporary fixture failure'));
+    render(<CreateAdDialog open initialDraft={initialDraft} onOpenChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Skip photos' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Publish listing' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Publish listing' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Temporary fixture failure');
+    expect(screen.getByLabelText('What would you like to list?')).toHaveValue('Need guitar lessons');
+    expect(readPendingPublication(boundary.user.id)?.query).toBe('Need guitar lessons');
+    fireEvent.click(screen.getByRole('button', { name: 'Publish listing' }));
+    await waitFor(() => expect(boundary.create).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(readPendingPublication(boundary.user.id)).toBeNull());
+    expect(readAuthContinuation(boundary.user.id)).toBeNull();
+  });
+  it('hides and closes an in-memory form immediately when the authenticated account changes', async () => {
+    const onOpenChange = vi.fn();
+    const view = render(<CreateAdDialog open initialDraft={{ query: 'Private draft for A', returnTo: '/' }} onOpenChange={onOpenChange} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Skip photos' }));
+    expect(screen.getByLabelText('What would you like to list?')).toHaveValue('Private draft for A');
+    boundary.user = { id: 'different-account', phoneNumber: '' };
+    view.rerender(<CreateAdDialog open initialDraft={{ query: 'Private draft for A', returnTo: '/' }} onOpenChange={onOpenChange} />);
+    expect(screen.queryByLabelText('What would you like to list?')).not.toBeInTheDocument();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+  it('preserves the request intent, search text and chosen location instead of replacing them with inferred offers', async () => {
+    render(<CreateAdDialog open onOpenChange={vi.fn()} initialDraft={{ intent: 'request', query: 'Selling guitar lessons', category: 'Services', tags: ['acoustic'], location: 'Athens', coordinates: '23.72,37.98', returnTo: '/services?q=guitar' }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Skip photos' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Publish listing' })).toBeEnabled());
+    expect(screen.getByLabelText('What would you like to list?')).toHaveValue('Selling guitar lessons');
+    expect(screen.getByLabelText('Title')).toHaveValue('Selling guitar lessons');
+    expect(screen.getByLabelText('Category')).toHaveValue('Services');
+    expect(screen.getByLabelText('Listing type')).toHaveValue('I want');
+    expect(screen.getByLabelText('Location')).toHaveValue('Athens');
+    expect(screen.getByRole('button', { name: 'acoustic' })).toHaveAttribute('aria-pressed', 'true');
+    expect(boundary.create).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'Items' } });
+    expect(screen.getByLabelText('Listing type')).toHaveValue('Buy');
+  });
   it.each(['', '0'])('keeps a rate draft with an invalid amount %j until its price is corrected', async price => {
     const note = 'μπορω να αναλαβω ηλικιωμενους κατοικον με 10 ευρω την ωρα';
     openDetails();
@@ -53,7 +112,7 @@ describe('reviewing an automatically extracted listing draft', () => {
     expect(screen.getByLabelText('What would you like to list?')).toHaveValue(note);
     fireEvent.change(screen.getByLabelText('Price (€)'), { target: { value: '12' } });
     fireEvent.click(screen.getByRole('button', { name: 'Publish listing' }));
-    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ price: '12', description: note })));
+    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ price: '12', description: note }), boundary.user.id, expect.any(AbortSignal)));
   });
 
   it('lets an explicit Items/Free choice override rate wording', async () => {
@@ -63,7 +122,7 @@ describe('reviewing an automatically extracted listing draft', () => {
     fireEvent.change(screen.getByLabelText('Listing type'), { target: { value: 'Free' } });
     fireEvent.change(screen.getByLabelText('Location'), { target: { value: 'Athens' } });
     fireEvent.click(screen.getByRole('button', { name: 'Publish listing' }));
-    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ main_category: 'Items', sub_category: 'Free', price: '0' })));
+    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ main_category: 'Items', sub_category: 'Free', price: '0' }), boundary.user.id, expect.any(AbortSignal)));
     expect(screen.queryByText('Enter a price greater than 0 for this rate.')).not.toBeInTheDocument();
   });
 
@@ -99,7 +158,7 @@ describe('reviewing an automatically extracted listing draft', () => {
     await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({
       main_category: 'Services', sub_category: 'I can', price: '12', description: note,
       tags: expect.arrayContaining(['12€/hour']),
-    })));
+    }), boundary.user.id, expect.any(AbortSignal)));
   });
 
   it('removes the previous rate basis when an inferred draft changes to a fixed price', async () => {
@@ -263,7 +322,7 @@ describe('reviewing an automatically extracted listing draft', () => {
     expect(screen.getByLabelText('Phone (optional)')).toHaveValue('');
     expect(boundary.create).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Publish listing' }));
-    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ title: 'Ζητάω υδραυλικό αύριο', price: '75', main_category: 'Services', sub_category: 'I want', contact_number: '' })));
+    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ title: 'Ζητάω υδραυλικό αύριο', price: '75', main_category: 'Services', sub_category: 'I want', contact_number: '' }), boundary.user.id, expect.any(AbortSignal)));
   });
 
   it('keeps the matching category when a manually chosen listing type precedes a different inferred category', async () => {
@@ -275,7 +334,7 @@ describe('reviewing an automatically extracted listing draft', () => {
     expect(screen.getByLabelText('Listing type')).toHaveValue('Buy');
     fireEvent.change(screen.getByLabelText('Location'), { target: { value: 'Athens' } });
     fireEvent.click(screen.getByRole('button', { name: 'Publish listing' }));
-    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ main_category: 'Items', sub_category: 'Buy' })));
+    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ main_category: 'Items', sub_category: 'Buy' }), boundary.user.id, expect.any(AbortSignal)));
   });
 
   it.each(['75', 'not-a-price'])('sets an inferred giveaway price to zero after the user entered %s', async price => {
@@ -288,7 +347,7 @@ describe('reviewing an automatically extracted listing draft', () => {
     expect(screen.getByLabelText('Price (€)')).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Location'), { target: { value: 'Athens' } });
     fireEvent.click(screen.getByRole('button', { name: 'Publish listing' }));
-    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ sub_category: 'Free', price: '0' })));
+    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ sub_category: 'Free', price: '0' }), boundary.user.id, expect.any(AbortSignal)));
   });
 
   it('rejects invalid image content and a selection exceeding six photos before publishing', async () => {
@@ -315,6 +374,6 @@ describe('reviewing an automatically extracted listing draft', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     fireEvent.change(screen.getByLabelText('Location'), { target: { value: 'Athens' } });
     fireEvent.click(screen.getByRole('button', { name: 'Publish listing' }));
-    await waitFor(() => expect(boundary.upload).toHaveBeenCalledWith('created-listing', photos));
+    await waitFor(() => expect(boundary.upload).toHaveBeenCalledWith('created-listing', photos, boundary.user.id));
   });
 });

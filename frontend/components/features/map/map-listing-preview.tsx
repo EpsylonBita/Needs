@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { ArrowUpRight, ImageIcon, MapPin, X } from 'lucide-react';
 
 import { useI18n } from '@/contexts/i18n-context';
-import { formatPublishedListingPrice, listingPriceNeedsConfirmation } from '@/lib/listings/price-policy';
+import { formatPublishedListingPrice } from '@/lib/listings/price-policy';
+import { safeInternalPath } from '@/lib/auth/return-path';
+import { DemoListingNotice } from '@/components/features/listings/demo-listing-notice';
 
 export interface MapListing {
   id: string;
@@ -18,17 +20,19 @@ export interface MapListing {
   location: { coordinates: [number, number]; address: string };
 }
 
-export function MapListingPreview({ listing, onClose }: { listing: MapListing; onClose: () => void }) {
+export function MapListingPreview({ listing, onClose, returnTo }: { listing: MapListing; onClose: () => void; returnTo?: string }) {
   const { t, locale } = useI18n();
   const [failedImage, setFailedImage] = useState<string | null>(null);
   const imageUrl = listing.imageUrl;
   const safeImage = imageUrl && imageUrl !== failedImage && (/^https?:\/\//i.test(imageUrl) || (imageUrl.startsWith('/') && !imageUrl.startsWith('//'))) ? imageUrl : null;
+  const returnPath = returnTo ? safeInternalPath(returnTo, '/search') : null;
+  const listingHref = `/listings/${encodeURIComponent(listing.id)}${returnPath ? `?returnTo=${encodeURIComponent(returnPath)}` : ''}`;
   const categories: Record<string, string> = {
     Items: t('searchModern.items', 'Items'), Services: t('searchModern.services', 'Services'),
     Sell: t('searchModern.sell', 'Sell'), Buy: t('searchModern.buy', 'Buy'), Free: t('searchModern.free', 'Free'),
     'I want': t('searchModern.want', 'I want'), 'I will': t('searchModern.will', 'I will'), 'I can': t('searchModern.can', 'I can'),
   };
-  const price = listing.price === 0 && !listingPriceNeedsConfirmation(listing.price, listing.description, listing.category, listing.subcategory) ? t('map.free', 'Free') : typeof listing.price === 'number' && Number.isFinite(listing.price) ? formatPublishedListingPrice(listing.price, listing.description, locale, listing.category, listing.subcategory) : t('map.priceOnRequest', 'Ask for price');
+  const price = typeof listing.price === 'number' && Number.isFinite(listing.price) ? formatPublishedListingPrice(listing.price, listing.description, locale, listing.category, listing.subcategory) : t('map.priceOnRequest', 'Ask for price');
 
   return <section className="needs-map-preview" role="dialog" aria-label={listing.title} aria-modal="false">
     <button type="button" className="needs-map-preview-close" aria-label={t('map.close', 'Close')} onClick={onClose}><X aria-hidden="true" className="h-4 w-4" /></button>
@@ -43,10 +47,11 @@ export function MapListingPreview({ listing, onClose }: { listing: MapListing; o
       <div className="needs-map-preview-copy">
         {(listing.category || listing.subcategory) && <p className="needs-map-preview-category">{[listing.category, listing.subcategory].filter(Boolean).map(value => categories[value!] || value).join(' · ')}</p>}
         <h3>{listing.title}</h3>
+        <DemoListingNotice id={listing.id} locale={locale} />
         {listing.location.address && <p className="needs-map-preview-location"><MapPin aria-hidden="true" className="h-3 w-3 shrink-0" /><span>{listing.location.address}</span></p>}
         {listing.description && <p className="needs-map-preview-description">{listing.description}</p>}
       </div>
     </div>
-    <div className="needs-map-preview-footer"><strong>{price}</strong><Link href={`/listings/${encodeURIComponent(listing.id)}`}>{t('map.viewListing', 'View listing')}<ArrowUpRight aria-hidden="true" className="h-4 w-4" /></Link></div>
+    <div className="needs-map-preview-footer"><strong>{price}</strong><Link href={listingHref}>{t('map.viewListing', 'View listing')}<ArrowUpRight aria-hidden="true" className="h-4 w-4" /></Link></div>
   </section>;
 }

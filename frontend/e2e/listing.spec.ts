@@ -48,8 +48,11 @@ async function fixtureBackend(page: Page, failFirstSave = false) {
 async function signedInListing(page: Page) {
   await page.goto('/');
   const desktop = page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'New listing', exact: true });
+  const menu = page.getByRole('button', { name: 'Open menu', exact: true });
+  // Wait for streamed navigation before deciding which responsive entry is visible.
+  await expect(desktop.or(menu)).toBeVisible();
   if (await desktop.isVisible()) await desktop.click();
-  else { await page.getByRole('button', { name: 'Open menu', exact: true }).click(); await page.getByRole('button', { name: 'New listing', exact: true }).click(); }
+  else { await menu.click(); await page.getByRole('button', { name: 'New listing', exact: true }).click(); }
   const login = page.getByRole('dialog');
   await login.getByLabel('Email', { exact: true }).fill('listing@example.test');
   await login.getByLabel('Password', { exact: true }).fill('Local-fixture-only-123!');
@@ -102,6 +105,8 @@ test('extracts the reported Greek phone discount and hourly care service', async
   await expect(confirmation).toBeVisible();
   await expect(confirmation.getByRole('link', { name: 'View listing' })).toHaveAttribute('href', `/listings/${listingId}`);
   await expect(confirmation.getByRole('button', { name: 'Publish listing' })).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem('needs.pending-publication'))).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem('needs.auth-continuation'))).toBeNull();
   await confirmation.getByRole('button', { name: 'Done', exact: true }).click();
   await expect(confirmation).toHaveCount(0);
   expect(backend.writes).toHaveLength(1);
@@ -145,6 +150,7 @@ test('failed save preserves the draft and a cleared phone through retry', async 
   await expect(page.getByRole('alert').filter({ hasText: 'Failed to create ad' })).toBeVisible();
   await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Trek used');
   await expect(page.getByLabel('Phone (optional)', { exact: true })).toHaveValue('');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('needs.pending-publication') || 'null')?.accountId)).toBe(userId);
   await page.getByRole('button', { name: 'Publish listing', exact: true }).click();
   const confirmation = page.getByRole('dialog', { name: 'Your listing is published!' });
   await expect(confirmation).toBeVisible();

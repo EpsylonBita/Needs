@@ -21,6 +21,7 @@ import { uploadListingImages, validateListingImages } from '@/lib/services/stora
 import { getLocationAreaTag } from '@/lib/services/location-suggestions';
 import { witService } from '@/lib/services/wit-service';
 import { listingPriceNeedsConfirmation } from '@/lib/listings/price-policy';
+import { clearPendingPublication, publicationCoordinates, publicationSelection, type PendingPublication } from '@/lib/listings/publication-intent';
 import { CategoryTagsPicker } from './category-tags-picker';
 import { ImageUploader } from './image-uploader';
 import { LocationPicker } from './location-picker';
@@ -36,11 +37,19 @@ const priceUnits = {
   month: { el: 'μήνα', en: 'month', hintEl: 'Ανά μήνα, όπως γράφεις στην περιγραφή. Συμφωνήστε το συνολικό ποσό πριν την πληρωμή.', hintEn: 'Per month, as stated in your description. Agree the total before payment.' },
 };
 
-export function CreateAdDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  return open ? <CreateAdForm onOpenChange={onOpenChange} /> : null;
+export function CreateAdDialog({ open, onOpenChange, initialDraft }: { open: boolean; onOpenChange: (open: boolean) => void; initialDraft?: PendingPublication }) {
+  const { user, isLoading } = useAuth();
+  const [ownerId, setOwnerId] = useState(user?.id ?? null);
+  useEffect(() => {
+    if (ownerId && !isLoading && user?.id !== ownerId) onOpenChange(false);
+  }, [ownerId, isLoading, user?.id, onOpenChange]);
+  if (!ownerId && user?.id) { setOwnerId(user.id); return null; }
+  // Never render one account's in-memory form during an auth transition.
+  return open && user && user.id === ownerId && (!initialDraft?.accountId || initialDraft.accountId === user.id)
+    ? <CreateAdForm onOpenChange={onOpenChange} initialDraft={initialDraft} /> : null;
 }
 
-function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
+function CreateAdForm({ onOpenChange, initialDraft }: { onOpenChange: (open: boolean) => void; initialDraft?: PendingPublication }) {
   const open = true;
   const { locale } = useI18n();
   const el = locale === 'el';
@@ -60,16 +69,21 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
   const [savedListingId, setSavedListingId] = useState<string | null>(null);
   const [onboardRequired, setOnboardRequired] = useState(false);
   const [showMap, setShowMap] = useState(false);
-  const [coordinates, setCoordinates] = useState<[number, number] | null>(null);
+  const [coordinates, setCoordinates] = useState<[number, number] | null>(() => publicationCoordinates(initialDraft?.coordinates));
   const [isLocating, setIsLocating] = useState(false);
   const [extracted, setExtracted] = useState<{ tags: string[]; smartTags: string[]; price?: string; priceUnit?: keyof typeof priceUnits; category?: string }>({ tags: [], smartTags: [] });
   const [locationArea, setLocationArea] = useState<string | undefined>();
-  const manual = useRef(new Set<DraftField>());
-  const [tagEdits, setTagEdits] = useState<{ added: string[]; removed: string[] }>({ added: [], removed: [] });
+  const manual = useRef(new Set<DraftField>([
+    ...(initialDraft?.intent ? ['category', 'subcategory'] as const : []),
+    ...(initialDraft?.query ? ['title'] as const : []),
+    ...(initialDraft?.location ? ['location'] as const : []),
+  ]));
+  const [tagEdits, setTagEdits] = useState<{ added: string[]; removed: string[] }>({ added: initialDraft?.tags ?? [], removed: [] });
   const revision = useRef(0);
   const photoRevision = useRef(0);
   const photoBusy = useRef(false);
   const submitting = useRef(false);
+  const submission = useRef<AbortController | null>(null);
   const mapClick = useRef<(event: mapboxgl.MapMouseEvent) => void>(() => {});
   const { map, marker, initializeMap, updateMarker } = useMap();
   const schema = z.object({
@@ -82,7 +96,7 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
     location: z.string().trim().min(3, el ? 'Γράψε την περιοχή σου.' : 'Enter your area.'),
   }).refine(data => !!CATEGORY_STRUCTURE[data.category as keyof typeof CATEGORY_STRUCTURE]?.subcategories.includes(data.subcategory), { path: ['subcategory'], message: el ? 'Διάλεξε έγκυρο είδος για αυτήν την κατηγορία.' : 'Choose a valid type for this category.' })
     .refine(data => { try { return !listingPriceNeedsConfirmation(parseListingPrice(data.price), data.description, data.category, data.subcategory); } catch { return true; } }, { path: ['price'], message: el ? 'Συμπλήρωσε τιμή μεγαλύτερη από 0 για τη χρέωση ανά μονάδα.' : 'Enter a price greater than 0 for this rate.' });
-  const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { ...defaults, contactNumber: profilePhone } });
+  const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: { ...defaults, ...publicationSelection(initialDraft?.intent, initialDraft?.category), title: initialDraft?.query ?? '', description: initialDraft?.query ?? '', location: initialDraft?.location ?? '', contactNumber: profilePhone } });
   const { register, handleSubmit, setValue, getValues, formState: { errors } } = form;
   const description = useWatch({ control: form.control, name: 'description' });
   const title = useWatch({ control: form.control, name: 'title' });
@@ -108,7 +122,7 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
   const selectedTags = useMemo(() => [...new Map([...tagEdits.added, ...analysis.smartTags.filter(tag => !tagEdits.removed.includes(tag))].map(tag => [tag.toLocaleLowerCase(), tag])).values()].slice(0, 20), [analysis, tagEdits]);
   useEffect(() => { if (open && step === 2 && !publishedListing) form.setFocus('description'); }, [open, step, form, publishedListing]);
 
-  useEffect(() => () => { ++photoRevision.current; ++revision.current; }, []);
+  useEffect(() => () => { ++photoRevision.current; ++revision.current; submission.current?.abort(); }, []);
 
   // Inferred values follow the description; explicit edits always win.
   useEffect(() => {
@@ -215,7 +229,9 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
   };
 
   const onSubmit = async (data: FormValues) => {
-    if (step !== 2 || submitting.current || isAnalyzing || isLocating || photoBusy.current || savedListingId || publishedListing) return;
+    if (!user?.id || step !== 2 || submitting.current || isAnalyzing || isLocating || photoBusy.current || savedListingId || publishedListing) return;
+    const controller = new AbortController();
+    submission.current = controller;
     submitting.current = true; setIsSubmitting(true); setError(null); setOnboardRequired(false);
     let createdId: string | undefined;
     const creatingUserId = user?.id;
@@ -223,21 +239,27 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
       let point = coordinates;
       if (!point) {
         if (!process.env.NEXT_PUBLIC_MAPBOX_TOKEN) throw new Error(el ? 'Η επαλήθευση τοποθεσίας δεν είναι διαθέσιμη.' : 'Location verification is unavailable.');
-        const response = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(data.location)}.json?limit=1&access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}`);
+        const response = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(data.location)}.json?limit=1&access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}`, { signal: controller.signal });
         if (!response.ok) throw new Error(el ? 'Δεν βρέθηκε η περιοχή. Έλεγξε την ονομασία.' : 'Area not found. Check the name.');
         const result = await response.json();
+        controller.signal.throwIfAborted();
         point = result.features?.[0]?.center ?? null;
         if (!point) throw new Error(el ? 'Δεν βρέθηκε η περιοχή.' : 'Area not found.');
         setCoordinates(point);
       }
-      const created = await createListing({ title: data.title, description: data.description, main_category: data.category as 'Items' | 'Services', sub_category: data.subcategory as 'Buy' | 'Sell' | 'Free' | 'I want' | 'I will' | 'I can', price: data.subcategory === 'Free' ? '0' : data.price, tags: selectedTags, coordinates: point, address: { label: data.location }, contact_number: data.contactNumber });
+      controller.signal.throwIfAborted();
+      const created = await createListing({ title: data.title, description: data.description, main_category: data.category as 'Items' | 'Services', sub_category: data.subcategory as 'Buy' | 'Sell' | 'Free' | 'I want' | 'I will' | 'I can', price: data.subcategory === 'Free' ? '0' : data.price, tags: selectedTags, coordinates: point, address: { label: data.location }, contact_number: data.contactNumber }, creatingUserId, controller.signal);
       createdId = created.id;
-      if (photos.length) await uploadListingImages(created.id, photos.map(photo => photo.file));
+      controller.signal.throwIfAborted();
+      if (photos.length) await uploadListingImages(created.id, photos.map(photo => photo.file), creatingUserId);
+      controller.signal.throwIfAborted();
       setPublishedListing({ id: created.id, title: data.title });
+      clearPendingPublication();
     } catch (failure) {
+      if (controller.signal.aborted) return;
       if (createdId) {
         const failedListingId = createdId;
-        try { await deleteListing(createdId); createdId = undefined; }
+        try { await deleteListing(createdId, creatingUserId); createdId = undefined; }
         catch {
           setSavedListingId(failedListingId);
           setError(el ? 'Η αγγελία αποθηκεύτηκε, αλλά οι φωτογραφίες δεν ολοκληρώθηκαν. Συνέχισε από τις αγγελίες σου.' : `Your listing ${createdId} is saved in My Listings, but photo upload did not complete. Manage its images there.`);
@@ -254,7 +276,8 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
         void queryClient.invalidateQueries({ queryKey: ['profile-overview', creatingUserId] });
         void queryClient.invalidateQueries({ queryKey: ['my-listings', creatingUserId] });
       }
-      submitting.current = false; setIsSubmitting(false);
+      submitting.current = false;
+      if (!controller.signal.aborted) setIsSubmitting(false);
     }
   };
   const fieldError = (field: keyof FormValues) => errors[field] ? <p id={`create-${field}-error`} role="alert" className="mt-1 text-sm text-destructive">{errors[field]?.message}</p> : null;
@@ -288,7 +311,7 @@ function CreateAdForm({ onOpenChange }: { onOpenChange: (open: boolean) => void 
               {fieldError('description')}
               <p role="status" aria-live="polite" className="flex items-start gap-1.5 text-xs leading-5 text-muted-foreground"><Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />{isAnalyzing ? (el ? 'Συμπληρώνουμε όσα αναγνωρίζουμε…' : 'Filling in recognized details…') : (el ? 'Κατηγορία, είδος, τίτλος, τιμή και tags συμπληρώνονται από το κείμενό σου. Έλεγξέ τα και άλλαξε ό,τι θέλεις.' : 'Category, type, title, price and tags fill from your text. Review them and change anything.')}</p>
             </div>
-            <CategoryTagsPicker selectedCategory={selectedCategory} selectedSubcategory={selectedSubcategory} selectedTags={selectedTags} analysis={analysis} isLoadingTags={isAnalyzing} onCategorySelect={value => { manual.current.add('category'); manual.current.add('subcategory'); setValue('category', value, { shouldValidate: true }); setValue('subcategory', ''); }} onSubcategorySelect={value => { manual.current.add('category'); manual.current.add('subcategory'); setValue('subcategory', value, { shouldValidate: true }); if (value === 'Free') { manual.current.add('price'); setValue('price', '0'); } }} onToggleTag={toggleTag} onAddTag={tag => { if (!selectedTags.includes(tag)) toggleTag(tag); }} categoryError={errors.category?.message} subcategoryError={errors.subcategory?.message}>
+            <CategoryTagsPicker selectedCategory={selectedCategory} selectedSubcategory={selectedSubcategory} selectedTags={selectedTags} analysis={analysis} isLoadingTags={isAnalyzing} onCategorySelect={value => { manual.current.add('category'); manual.current.add('subcategory'); setValue('category', value, { shouldValidate: true }); setValue('subcategory', value ? publicationSelection(initialDraft?.intent, value).subcategory : ''); }} onSubcategorySelect={value => { manual.current.add('category'); manual.current.add('subcategory'); setValue('subcategory', value, { shouldValidate: true }); if (value === 'Free') { manual.current.add('price'); setValue('price', '0'); } }} onToggleTag={toggleTag} onAddTag={tag => { if (!selectedTags.includes(tag)) toggleTag(tag); }} categoryError={errors.category?.message} subcategoryError={errors.subcategory?.message}>
             <div><Label htmlFor="create-title">{el ? 'Τίτλος' : 'Title'}</Label><Input id="create-title" {...register('title')} onChange={event => { manual.current.add('title'); void register('title').onChange(event); }} {...fieldA11y('title')} maxLength={200} className="mt-1.5 h-11 rounded-xl bg-background text-base shadow-none" />{fieldError('title')}</div>
             <div className="grid gap-4 sm:grid-cols-2">
             <div><Label htmlFor="create-price">{el ? 'Τιμή (€)' : 'Price (€)'}</Label><Input id="create-price" {...register('price')} onChange={event => { manual.current.add('price'); void register('price').onChange(event); }} {...fieldA11y('price')} aria-describedby={`create-price-help${errors.price ? ' create-price-error' : ''}`} disabled={selectedSubcategory === 'Free'} inputMode="decimal" placeholder="0" className="mt-1.5 h-11 rounded-xl bg-background text-base shadow-none" /><p id="create-price-help" className="mt-1 text-xs text-muted-foreground">{priceHelp}</p>{fieldError('price')}{(selectedCategory === 'Items' || selectedCategory === 'Services') && (selectedSubcategory === 'Sell' || selectedSubcategory === 'I will' || selectedSubcategory === 'I can') && <PriceGuidance subject={{ title, description, mainCategory: selectedCategory, subCategory: selectedSubcategory, coordinates }} price={price} />}</div>

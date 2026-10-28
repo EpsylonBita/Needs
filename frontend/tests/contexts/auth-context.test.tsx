@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider, useAuth } from '@/contexts/auth-context'
+import { readPendingPublication, savePendingPublication } from '@/lib/listings/publication-intent'
+import { readAuthContinuation } from '@/lib/auth/return-path'
 
 const mocks = vi.hoisted(() => ({
   listener: undefined as undefined | ((event: string, session: any) => unknown),
@@ -34,11 +36,26 @@ function Probe() {
 }
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
   mocks.getSession.mockResolvedValue({ data: { session: null }, error: null })
   mocks.profile.mockResolvedValue({ data: [{ display_name: 'Profile name' }], error: null })
   mocks.signOut.mockResolvedValue({ error: null })
 })
 describe('authentication lifecycle', () => {
+  it('binds guest content on verified login and clears it on sign-out or account switching', async () => {
+    savePendingPublication({ returnTo: '/search?q=guitar', query: 'guitar', intent: 'request' })
+    render(<AuthProvider><Probe /></AuthProvider>)
+    await screen.findByText('guest:ready')
+    act(() => { mocks.listener!('SIGNED_IN', { user: account }) })
+    expect(readPendingPublication(account.id)).toMatchObject({ query: 'guitar', intent: 'request', accountId: account.id })
+    expect(readPendingPublication('different-user')).toBeNull()
+    act(() => { mocks.listener!('SIGNED_IN', { user: { ...account, id: 'different-user' } }) })
+    expect(readPendingPublication('different-user')).toBeNull()
+    expect(readAuthContinuation('different-user')).toBeNull()
+    savePendingPublication({ returnTo: '/', query: 'new account draft' }, 'different-user')
+    act(() => { mocks.listener!('SIGNED_OUT', null) })
+    expect(readPendingPublication('different-user')).toBeNull()
+  })
   it('returns from the auth callback before doing profile I/O and never reacquires the auth lock', async () => {
     render(<AuthProvider><Probe /></AuthProvider>)
     await screen.findByText('guest:ready')

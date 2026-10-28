@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ push: vi.fn(), reducedMotion: false }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: state.push }) }));
+vi.mock('@/components/features/ads/new-listing-button', () => ({ NewListingButton: ({ children, intent }: { children: React.ReactNode; intent: string }) => <button data-intent={intent}>{children}</button> }));
 vi.mock('next/image', () => ({ default: ({ src, alt, className }: { src: string; alt: string; className: string }) => <img src={src} alt={alt} className={className} /> }));
 vi.mock('@/contexts/i18n-context', () => ({ useI18n: () => ({ t: (key: string, fallback?: string) => ({ 'modern.hero.title': 'Everything you need.', 'modern.hero.accent': 'Closer to you.' }[key] || fallback || key) }) }));
 vi.mock('framer-motion', () => ({
@@ -30,6 +31,8 @@ describe('Athens homepage hero', () => {
     render(<HeroSection />);
     expect(screen.getByRole('img', { name: 'Athens, the Acropolis and the sea' })).toHaveAttribute('src', '/athens.jpg');
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Everything you need. Closer to you.');
+    expect(screen.getByRole('button', { name: 'I need something' })).toHaveAttribute('data-intent', 'request');
+    expect(screen.getByRole('button', { name: 'I have something to offer' })).toHaveAttribute('data-intent', 'offer');
     fireEvent.change(screen.getByRole('searchbox', { name: 'What are you looking for?' }), { target: { value: '  guitar & lessons / Αθήνα?  ' } });
     fireEvent.submit(screen.getByRole('search'));
     expect(state.push).toHaveBeenCalledWith('/search?q=guitar+%26+lessons+%2F+%CE%91%CE%B8%CE%AE%CE%BD%CE%B1%3F');

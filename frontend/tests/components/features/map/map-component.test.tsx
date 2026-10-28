@@ -7,7 +7,7 @@ import { mapModernMessages as greek } from '@/locales/map-modern-el';
 const state = vi.hoisted(() => ({
   maps: [] as any[], markers: [] as any[], controls: [] as any[], bounds: [] as any[], popups: [] as any[],
   push: vi.fn(), getCurrentPosition: vi.fn(), locale: 'en', theme: 'light', user: null as null | { id: string },
-  rpc: vi.fn(), select: vi.fn(), ids: vi.fn(),
+  rpc: vi.fn(), select: vi.fn(), ids: vi.fn(), supported: true,
 }));
 vi.mock('next-themes', () => ({ useTheme: () => ({ resolvedTheme: state.theme }) }));
 vi.mock('@/lib/supabase/client', () => ({ supabase: { rpc: state.rpc, from: () => ({ select: state.select }) } }));
@@ -18,6 +18,7 @@ vi.mock('@/contexts/i18n-context', () => {
   return { useI18n: () => ({ t, locale: state.locale, formatCurrency: (amount: number, currency: string) => new Intl.NumberFormat(state.locale, { style: 'currency', currency }).format(amount), formatNumber: (amount: number) => String(amount) }) };
 });
 vi.mock('mapbox-gl', () => ({ default: {
+  supported: () => state.supported,
   Map: class {
     options: any; handlers = new Map<string, Set<() => void>>(); controls: any[] = [];
     fitBounds = vi.fn(); resize = vi.fn(); remove = vi.fn(); setStyle = vi.fn(); panBy = vi.fn(); loaded = () => false;
@@ -63,16 +64,86 @@ const listing = { id: 'listing-1', title: 'Bicycle', description: 'A city bicycl
 
 beforeEach(() => {
   state.maps = []; state.markers = []; state.controls = []; state.bounds = []; state.popups = [];
-  state.locale = 'en'; state.theme = 'light'; state.user = null;
+  state.locale = 'en'; state.theme = 'light'; state.user = null; state.supported = true;
   state.push.mockReset(); state.getCurrentPosition.mockReset();
   state.rpc.mockReset(); state.select.mockReset(); state.ids.mockReset();
   state.select.mockReturnValue({ in: state.ids });
   vi.stubEnv('NEXT_PUBLIC_MAPBOX_TOKEN', 'pk.offline-fixture');
   vi.stubGlobal('navigator', Object.assign(Object.create(navigator), { geolocation: { getCurrentPosition: state.getCurrentPosition } }));
 });
-afterEach(() => { cleanup(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 describe('map interaction and accessibility', () => {
+  it('reports loading and success, and preserves a ready map after a recoverable tile error', () => {
+    const onStatusChange = vi.fn();
+    render(<ListingMap results={[listing]} onStatusChange={onStatusChange} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Loading map');
+    expect(onStatusChange).toHaveBeenLastCalledWith('loading');
+    const current = state.maps[0];
+    act(() => current.handlers.get('load').forEach((callback: () => void) => callback()));
+    expect(onStatusChange).toHaveBeenLastCalledWith('ready');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    act(() => current.handlers.get('error').forEach((callback: () => void) => callback()));
+    expect(screen.getByRole('button', { name: /View listing: Bicycle/ })).toBeInTheDocument();
+    expect(current.remove).not.toHaveBeenCalled();
+    expect(onStatusChange).toHaveBeenLastCalledWith('ready');
+  });
+
+  it('bounds a stalled startup, disposes it, and retries the same listings with a fresh instance', () => {
+    vi.useFakeTimers();
+    const onStatusChange = vi.fn();
+    const view = render(<ListingMap results={[listing]} onStatusChange={onStatusChange} />);
+    const first = state.maps[0];
+    act(() => vi.advanceTimersByTime(15_000));
+    expect(view.container.querySelector('[data-map-error="timeout"]')).toBeInTheDocument();
+    expect(first.remove).toHaveBeenCalledOnce();
+    expect(first.handlers.get('load').size).toBe(0);
+    expect(first.handlers.get('error').size).toBe(0);
+    expect(onStatusChange).toHaveBeenLastCalledWith('error');
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(state.maps).toHaveLength(2);
+    expect(first.remove).toHaveBeenCalledOnce();
+    act(() => state.maps[1].handlers.get('load').forEach((callback: () => void) => callback()));
+    expect(screen.getByRole('button', { name: /View listing: Bicycle/ })).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(30_000));
+    expect(onStatusChange).toHaveBeenLastCalledWith('ready');
+    view.unmount();
+    expect(state.maps[1].remove).toHaveBeenCalledOnce();
+  });
+
+  it('distinguishes missing WebGL support without allocating a map or requesting location', () => {
+    state.supported = false;
+    const view = render(<ListingMap results={[listing]} />);
+    expect(screen.getByRole('status')).toHaveTextContent('This browser cannot display the map');
+    expect(view.container.querySelector('[data-map-error="unsupported"]')).toBeInTheDocument();
+    expect(state.maps).toHaveLength(0);
+    expect(state.getCurrentPosition).not.toHaveBeenCalled();
+  });
+
+  it('disposes a lost rendering context and supports a clean retry', () => {
+    const view = render(<ListingMap results={[listing]} />);
+    const current = state.maps[0];
+    act(() => current.handlers.get('load').forEach((callback: () => void) => callback()));
+    act(() => current.handlers.get('webglcontextlost').forEach((callback: () => void) => callback()));
+    expect(view.container.querySelector('[data-map-error="rendering"]')).toBeInTheDocument();
+    expect(current.remove).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(state.maps).toHaveLength(2);
+  });
+
+  it('preserves the search destination in preview links and rejects external destinations', async () => {
+    const destination = '/search?q=κιθάρα&coordinates=23.7%2C37.9&distance=10&page=2';
+    const view = render(<ListingMap results={[listing]} returnTo={destination} />);
+    await userEvent.click(screen.getByRole('button', { name: /View listing: Bicycle/ }));
+    const link = screen.getByRole('link', { name: 'View listing' });
+    const returned = new URL(link.getAttribute('href')!, 'https://needs.example').searchParams.get('returnTo')!;
+    expect(new URL(returned, 'https://needs.example').searchParams.get('q')).toBe('κιθάρα');
+    expect(new URL(returned, 'https://needs.example').searchParams.get('page')).toBe('2');
+    expect(new URL(returned, 'https://needs.example').searchParams.get('coordinates')).toBe('23.7,37.9');
+    view.rerender(<ListingMap results={[listing]} returnTo="//outside.example/path" />);
+    expect(screen.getByRole('link', { name: 'View listing' })).toHaveAttribute('href', '/listings/listing-1?returnTo=%2Fsearch');
+  });
+
   it('labels stored zero-rate markers and previews as needing confirmation', async () => {
     render(<ListingMap results={[{ ...listing, title: 'Home care', description: 'Home care 10€/hour', price: 0, category: 'Services', subcategory: 'I can' }]} />);
     await userEvent.click(screen.getByRole('button', { name: 'View listing: Home care · Price needs confirmation' }));
@@ -85,6 +156,21 @@ describe('map interaction and accessibility', () => {
     await userEvent.click(screen.getByRole('button', { name: 'View listing: Bicycle · Free' }));
     expect(screen.getByRole('dialog', { name: 'Bicycle' })).toHaveTextContent('Free');
     expect(screen.queryByText('Price needs confirmation')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['en', 'Items', 'Sell'], ['el', 'Items', 'Sell'],
+    ['en', 'Services', 'I can'], ['el', 'Services', 'I can'],
+  ])('does not label a zero-price %s %s/%s listing as free without the Free type', async (locale, category, subcategory) => {
+    state.locale = locale;
+    render(<ListingMap results={[{ ...listing, description: 'Available locally', price: 0, category, subcategory }]} />);
+    const marker = screen.getByRole('button', { name: /Bicycle/ });
+    expect(marker).not.toHaveTextContent(/Free|Δωρεάν/);
+    expect(marker).toHaveTextContent('0');
+    await userEvent.click(marker);
+    const preview = screen.getByRole('dialog', { name: 'Bicycle' });
+    expect(preview).not.toHaveTextContent(/Free|Δωρεάν/);
+    expect(preview.textContent).toContain(new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' }).format(0));
   });
 
   it('retains the rate basis in map markers and their listing previews', async () => {
@@ -198,7 +284,7 @@ describe('map interaction and accessibility', () => {
   });
 
   it('keeps one anchored preview, dismisses it on map click and close, and disposes popup listeners', async () => {
-    const second = { ...listing, id: 'desk', title: 'Desk', price: 0 };
+    const second = { ...listing, id: 'desk', title: 'Desk', price: 0, subcategory: 'Free' };
     const view = render(<ListingMap results={[listing, second]} />);
     const bicycle = screen.getByRole('button', { name: /View listing: Bicycle/ });
     const desk = screen.getByRole('button', { name: 'View listing: Desk · Free' });

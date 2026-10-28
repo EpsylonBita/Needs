@@ -11,6 +11,7 @@ import { Footer } from "@/components/layout/footer";
 import { Navbar } from "@/components/layout/navbar";
 import { PageMotion } from "@/components/layout/page-motion";
 import { SkipLink } from "@/components/layout/skip-link";
+import { PreviewNotice } from '@/components/layout/preview-notice';
 import { Toaster } from "@/components/ui/toaster";
 import { ContextProviders } from "@/contexts/providers";
 
@@ -40,6 +41,7 @@ export default async function RootLayout({
               <div className="flex min-h-screen flex-col">
                 <Navbar />
                 <PageMotion>{children}</PageMotion>
+                <PreviewNotice />
                 <Footer />
                 <Toaster />
                 <SonnerToaster />

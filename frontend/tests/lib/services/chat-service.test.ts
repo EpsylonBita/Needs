@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { DEMO_LISTING_IDS, DEMO_PROJECT_ID } from '@/lib/listings/demo-policy'
 
 const boundary = vi.hoisted(() => ({ user: { id: 'auth-user' } as { id: string } | null, rpc: vi.fn(), from: vi.fn() }))
 vi.mock('@/lib/supabase/client', () => ({ supabase: {
@@ -20,6 +21,7 @@ beforeEach(() => {
 })
 
 const signal = () => new AbortController().signal
+afterEach(() => vi.unstubAllEnvs())
 const message = (sequence = 1) => ({ id: `message-${sequence}`, chat_id: 'chat-one', sender_id: 'profile-other', content: 'Hello', created_at: '2026-10-19T12:00:00Z', sequence })
 
 describe('authenticated inbox persistence', () => {
@@ -80,6 +82,12 @@ describe('authenticated inbox persistence', () => {
 })
 
 describe('starting a conversation', () => {
+  it('rejects a verified demo before creating a conversation, while unrelated records stay usable', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', `https://${DEMO_PROJECT_ID}.supabase.co`)
+    await expect(getOrCreateListingChat(DEMO_LISTING_IDS[0])).rejects.toThrow('not available for transactions')
+    expect(boundary.rpc).not.toHaveBeenCalled()
+    await expect(getOrCreateListingChat('real-listing-same-owner')).resolves.toBe('target-chat')
+  })
   it('returns the authenticated listing conversation through the atomic RPC', async () => {
     await expect(getOrCreateListingChat('listing-id')).resolves.toBe('target-chat')
     expect(boundary.rpc).toHaveBeenCalledWith('get_or_create_direct_chat', { p_listing_id: 'listing-id', p_other_profile_id: null, p_expected_user_id: 'auth-user' })

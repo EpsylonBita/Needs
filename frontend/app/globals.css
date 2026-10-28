@@ -233,6 +233,11 @@
 .needs-search-filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 24px; }
 .needs-search-filter-grid > button:last-child { align-self: end; }
 .needs-search-workspace { display: grid; grid-template-columns: minmax(0, .78fr) minmax(0, 1.22fr); gap: 24px; align-items: start; }
+.needs-search-workspace--map-unavailable, .needs-discovery-grid--map-unavailable { grid-template-columns: minmax(0, 1fr); }
+.needs-search-workspace--map-unavailable > .needs-search-map-panel { order: 2; }
+.needs-discovery-grid--map-unavailable .needs-discovery-map { height: 200px; min-height: 200px; }
+.needs-city-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.needs-city-actions button { height: auto; min-height: 48px; max-width: 100%; white-space: normal; padding: 12px 18px; border-radius: 14px; }
 .needs-search-list { min-width: 0; min-height: 570px; padding: 24px; border: 1px solid hsl(var(--border) / .65); border-radius: 20px; background: hsl(var(--card)); }
 .needs-search-list h2 { font-size: 1.15rem; line-height: 1.4; letter-spacing: -.02em; }
 .needs-search-list > p { font-size: .8rem; }
@@ -289,8 +294,8 @@
   .needs-search-result-card { grid-template-columns: 88px minmax(0, 1fr); gap: 12px; }
 }
 /* The Athens hero retains the original photograph with one glass message at a time. */
-.needs-city-hero { position: relative; isolation: isolate; display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 3rem; height: min(850px, calc(100svh - 76px)); min-height: 660px; padding-block: clamp(32px, 5vh, 56px) 72px; overflow: hidden; color: white; background: #183b50; }
-.needs-header--home ~ main .needs-city-hero { height: min(926px, 100svh); min-height: 736px; padding-top: calc(76px + clamp(32px, 5vh, 56px)); }
+.needs-city-hero { position: relative; isolation: isolate; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 1.5rem; min-height: 580px; padding-block: clamp(28px, 4vh, 44px) 80px; overflow: hidden; color: white; background: #183b50; }
+.needs-header--home ~ main .needs-city-hero { min-height: 640px; padding-top: calc(76px + clamp(28px, 4vh, 44px)); }
 .needs-city-image { z-index: -3; object-position: center 62%; }
 .needs-city-shade { position: absolute; inset: 0; z-index: -2; background: linear-gradient(180deg, rgb(8 24 39 / .32), rgb(8 24 39 / .48) 45%, rgb(8 24 39 / .2)); }
 .needs-city-copy { position: relative; z-index: 2; width: min(640px, 57%); text-align: center; }
@@ -299,7 +304,7 @@
 .needs-city-phrase > span { display: block; }
 .needs-city-accent { color: #a6ceff; }
 .needs-city-copy > p { max-width: 500px; margin: 1.4rem auto 0; font-size: 1.12rem; line-height: 1.7; text-wrap: balance; }
-.needs-city-search { position: relative; z-index: 2; width: min(580px, 60%); transform: translateY(16px); }
+.needs-city-search { position: relative; z-index: 2; width: min(640px, 60%); }
 .needs-city-search .needs-hero-search { margin-top: 0; gap: 12px; padding: 6px 6px 6px 22px; border: 1px solid rgb(255 255 255 / .6); border-radius: 999px; background: hsl(var(--background) / .78); -webkit-backdrop-filter: blur(28px); backdrop-filter: blur(28px); color: hsl(var(--foreground)); box-shadow: 0 8px 30px rgb(0 0 0 / .12); transition: border-color .2s, box-shadow .2s; }
 .needs-city-search .needs-hero-search:focus-within { border-color: white; outline: 2px solid hsl(var(--ring)); outline-offset: 4px; box-shadow: 0 8px 32px rgb(0 0 0 / .18); }
 .needs-city-search .needs-hero-search input { min-height: 44px; font-size: 1rem; }
@@ -344,7 +349,7 @@
 }
 @media (width < 1024px) { .needs-nav-links { display: none; } }
 @media (768px <= width < 1024px) {
-  .needs-city-search { transform: translateY(8px); }
+  .needs-city-search { transform: none; }
   .needs-city-caption { bottom: 12px; }
 }
 @media (width < 768px) {
@@ -362,15 +367,15 @@
   .needs-footer-inner { align-items: flex-start; flex-direction: column; gap: 1rem; }
   .needs-footer nav { gap: .25rem 1rem; }
   .needs-page { padding-block: 2rem 3rem; }
-  .needs-city-hero { height: auto; min-height: 760px; padding: 24px 20px 76px; gap: 230px; }
-  .needs-header--home ~ main .needs-city-hero { height: auto; min-height: 830px; padding-top: 94px; }
+  .needs-city-hero { height: auto; min-height: 600px; padding: 24px 20px 190px; gap: 24px; }
+  .needs-header--home ~ main .needs-city-hero { height: auto; min-height: 670px; padding-top: 94px; }
   .needs-city-copy { width: 100%; max-width: 560px; }
-  .needs-city-search { width: 100%; max-width: 520px; transform: translateY(8px); }
+  .needs-city-search { width: 100%; max-width: 520px; transform: none; }
   .needs-city-search .needs-hero-search { gap: 8px; padding-left: 16px; }
   .needs-city-search .needs-hero-search button { padding-inline: 14px; }
   .needs-city-heading { font-size: clamp(2rem, 7.7vw, 3.5rem); }
   .needs-city-copy > p { font-size: 1rem; margin-top: 1rem; }
-  .needs-city-example { top: auto; bottom: 235px; width: 220px; left: auto; right: auto; }
+  .needs-city-example { top: auto; bottom: 78px; width: 220px; left: auto; right: auto; }
   .needs-city-example-0, .needs-city-example-2 { left: 7%; }
   .needs-city-example-1, .needs-city-example-3 { right: 7%; }
   .needs-city-caption { right: 20px; bottom: 15px; }

@@ -1,4 +1,13 @@
 export const authContactMessages = {
+  "auth.publication.need": "I need something",
+  "auth.publication.offer": "I have something to offer",
+  "auth.continue.request": "Sign in to publish what you need. You will review your listing before publishing.",
+  "auth.continue.offer": "Sign in to offer an item or service. You will review your listing before publishing.",
+  "auth.continue.listing": "Sign in to create your listing. Nothing is published until you confirm.",
+  "auth.continue.conversation": "Sign in to discuss “{title}” with its creator.",
+  "auth.continue.thisListing": "this listing",
+  "auth.continue.action": "Continue where you left off",
+  "auth.phonePrivacy": "Your phone is stored in your account and is not shown on your public profile. It is prefilled on new listings; you can change or remove it before publishing.",
   "auth.scene.location": "Athens, a little closer",
   "auth.scene.title": "Your neighborhood.\nYour people.",
   "auth.scene.description": "Find something you need. Share something you love.",

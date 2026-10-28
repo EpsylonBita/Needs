@@ -8,8 +8,10 @@ import SearchFilters from '@/components/features/search/search-filters';
 import { SearchResults } from '@/components/features/search/search-results';
 import { ListingDetail } from '@/components/features/search/listing-detail';
 import { SearchHeroSection } from '@/components/features/search/search-hero-section';
+import { DEMO_LISTING_IDS, DEMO_PROJECT_ID } from '@/lib/listings/demo-policy';
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }), usePathname: () => '/search' }));
+const navigation = vi.hoisted(() => ({ search: '' }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }), usePathname: () => '/search', useSearchParams: () => new URLSearchParams(navigation.search) }));
 vi.mock('@/contexts/i18n-context', () => ({ useI18n: () => ({ t: (_key: string, fallback?: string) => fallback || _key, formatCurrency: (value: number) => `$${value}` }) }));
 vi.mock('@/hooks/useGeolocation', () => ({ useGeolocation: () => ({ location: null, error: 'Location denied', isLoading: false }) }));
 vi.mock('@/lib/supabase/client', () => ({ supabase: { rpc: vi.fn(), from: vi.fn() } }));
@@ -20,6 +22,7 @@ vi.mock('@/components/features/map/map-component', () => ({ Map: ({ results, liv
 
 const request = vi.fn();
 beforeEach(() => {
+  navigation.search = '';
   account.user = null;
   account.profile = null;
   account.profileLoading = false;
@@ -27,9 +30,25 @@ beforeEach(() => {
   request.mockResolvedValue({ ok: true, json: async () => ({ listings: [{ id: 'listing-1', title: 'Oak desk', description: 'A real listing response', price: 40, main_category: 'Items', sub_category: 'Sell', coordinates: [23.72, 37.98] }], pagination: { total: 1, page: 1, totalPages: 1 } }) });
   vi.stubGlobal('fetch', request);
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe('Listing discovery', () => {
+  it('labels verified demos on search, detail and home, with no invitation to start a chat', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', `https://${DEMO_PROJECT_ID}.supabase.co`);
+    request.mockResolvedValue({ ok: true, json: async () => ({ listings: [{ id: DEMO_LISTING_IDS[0], title: 'Seed guitar', description: 'Example', price: 85, main_category: 'Items', sub_category: 'Sell' }], pagination: { total: 1, page: 1, totalPages: 1 } }) });
+    const search = render(<NuqsTestingAdapter searchParams=""><SearchResults /></NuqsTestingAdapter>);
+    expect(await screen.findByTestId('demo-listing-notice')).toHaveTextContent('Not available for transactions');
+    search.unmount();
+    const detail = render(<ListingDetail id={DEMO_LISTING_IDS[0]} />);
+    expect(await screen.findByTestId('demo-listing-notice')).toHaveTextContent('Demo listing');
+    expect(screen.queryByRole('link', { name: 'Chat' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Please log in to start a chat.')).not.toBeInTheDocument();
+    expect(screen.getByText(/cannot start a conversation or transaction/)).toBeInTheDocument();
+    detail.unmount();
+    render(<SearchHeroSection />);
+    expect(await screen.findByTestId('demo-listing-notice')).toHaveTextContent('Not available for transactions');
+    expect(screen.getByText('€85.00')).toBeInTheDocument();
+  });
   it('shows stored zero-rate prices as needing confirmation across discovery surfaces', async () => {
     request.mockResolvedValue({ ok: true, json: async () => ({ listings: [{ id: 'rate-listing', title: 'Home care', description: 'Home care 10€/hour', price: 0, main_category: 'Services', sub_category: 'I can' }], pagination: { total: 1, page: 1, totalPages: 1 } }) });
     const results = render(<NuqsTestingAdapter searchParams=""><SearchResults /></NuqsTestingAdapter>);
@@ -112,7 +131,7 @@ describe('Listing discovery', () => {
     const url = new URL(request.mock.calls.at(-1)![0], 'http://localhost');
     expect(url.searchParams.get('category')).toBe('Items');
     expect(url.searchParams.get('subcategory')).toBe('');
-    expect(screen.getByRole('link', { name: /Oak desk/ })).toHaveAttribute('href', '/listings/listing-1');
+    expect(screen.getByRole('link', { name: /Oak desk/ })).toHaveAttribute('href', '/listings/listing-1?returnTo=%2Fsearch');
   });
 
   it('loads a detail record and returns signed-out visitors to that listing conversation after login', async () => {
@@ -120,7 +139,34 @@ describe('Listing discovery', () => {
     await screen.findByRole('heading', { name: 'Oak desk' });
     const detailRequest = request.mock.calls.find(([url]) => new URL(url, 'http://localhost').pathname === '/api/search');
     expect(new URL(detailRequest![0], 'http://localhost').searchParams.get('listingId')).toBe('123e4567-e89b-12d3-a456-426614174000');
-    expect(screen.getByRole('link', { name: 'Chat' })).toHaveAttribute('href', '/login?redirectTo=%2Fchat%3Flisting%3Dlisting-1');
+    const chatLogin = new URL(screen.getByRole('link', { name: 'Chat' }).getAttribute('href')!, 'http://localhost');
+    expect(chatLogin.searchParams.get('redirectTo')).toBe('/chat?listing=listing-1');
+    expect(chatLogin.searchParams.get('context')).toBe('conversation');
+    expect(chatLogin.searchParams.get('listingTitle')).toBe('Oak desk');
+  });
+
+  it('keeps the complete search destination on the detail return link', async () => {
+    const destination = '/search?q=%CE%BA%CE%B9%CE%B8%CE%AC%CF%81%CE%B1&category=Items&coordinates=23.72%2C37.98&distance=12&tags=wood&page=2';
+    navigation.search = new URLSearchParams({ returnTo: destination }).toString();
+    render(<ListingDetail id="listing-1" />);
+    expect(screen.getByRole('link', { name: 'Back to search' })).toHaveAttribute('href', destination);
+    await screen.findByRole('heading', { name: 'Oak desk' });
+    expect(screen.getByRole('link', { name: 'Back to search' })).toHaveAttribute('href', destination);
+  });
+
+  it.each(['https://evil.invalid', '//evil.invalid', '/\\evil.invalid'])('rejects unsafe return destination %s', async returnTo => {
+    navigation.search = new URLSearchParams({ returnTo }).toString();
+    render(<ListingDetail id="listing-1" />);
+    expect(screen.getByRole('link', { name: 'Back to search' })).toHaveAttribute('href', '/search');
+    await screen.findByRole('heading', { name: 'Oak desk' });
+  });
+
+  it('identifies the publisher without treating no reviews as a zero rating', async () => {
+    request.mockResolvedValue({ ok: true, json: async () => ({ listings: [{ id: 'listing-1', seller_id: 'seller-1', sellerName: 'Maria', sellerTitle: 'Music teacher', sellerReviewCount: 0, title: 'Piano lessons', price: 20, main_category: 'Services', sub_category: 'I can' }] }) });
+    render(<ListingDetail id="listing-1" />);
+    expect(await screen.findByRole('link', { name: /Maria Music teacher/ })).toHaveAttribute('href', '/profile/seller-1');
+    expect(screen.getByText('No reviews yet')).toBeInTheDocument();
+    expect(screen.queryByText('0 / 5')).not.toBeInTheDocument();
   });
 
   it('sends listing publishers to their inbox instead of starting a conversation with themselves', async () => {

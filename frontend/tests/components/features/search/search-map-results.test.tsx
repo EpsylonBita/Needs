@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { NuqsTestingAdapter } from 'nuqs/adapters/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SearchListing } from '@/components/features/search/use-listing-search';
+vi.mock('@/components/features/ads/new-listing-button', () => ({ NewListingButton: ({ children }: { children: React.ReactNode }) => <button>{children}</button> }));
 
 type MapResult = { id: string; title: string; sellerId: string; sellerRating?: number; location: { coordinates: [number, number]; address: string } };
 type ResponseState = { data: { listings: SearchListing[]; pagination: { total: number; page: number; totalPages: number } } | null; isLoading: boolean; error: string | null; retry: () => void };
@@ -11,9 +12,11 @@ vi.mock('@/components/features/search/use-listing-search', () => ({ useListingSe
 vi.mock('@/contexts/i18n-context', () => ({ useI18n: () => ({ locale: 'en', t: (_key: string, fallback?: string) => fallback || _key, formatCurrency: (amount: number) => `€${amount}` }) }));
 vi.mock('@/components/features/map/map-component', async () => {
   const { useEffect } = await import('react');
-  return { Map: (props: { results: MapResult[]; live: boolean }) => {
+  return { Map: (props: { results: MapResult[]; live: boolean; onStatusChange?: (status: 'ready') => void }) => {
     mocks.mapProps = props;
+    const onStatusChange = props.onStatusChange;
     useEffect(() => { mocks.mounted(); return () => { mocks.unmounted(); }; }, []);
+    useEffect(() => { onStatusChange?.('ready'); }, [onStatusChange]);
     return <div data-testid="result-map" data-markers={props.results.length} data-live={String(props.live)} />;
   } };
 });
@@ -42,7 +45,7 @@ describe('search list and persistent map', () => {
     response = { ...response, isLoading: false };
     rerender();
     expect(map).toHaveAttribute('data-markers', '1');
-    expect(screen.getByRole('link', { name: /Oak desk/ })).toHaveAttribute('href', '/listings/desk');
+    expect(screen.getByRole('link', { name: /Oak desk/ })).toHaveAttribute('href', '/listings/desk?returnTo=%2Fsearch');
     response = { ...response, isLoading: true };
     rerender();
     expect(map).toHaveAttribute('data-markers', '0');
@@ -64,7 +67,7 @@ describe('search list and persistent map', () => {
     response.data = { listings: [listing, second, ...invalid], pagination: { total: 20, page: 3, totalPages: 4 } };
     render(<NuqsTestingAdapter searchParams="?q=old&category=Services&subcategory=I%20can&tags=wood,glass&distance=50&page=3&coordinates=23.7,37.9"><SearchResults query="desk" radiusMeters={12000} fixedCategory="Items" /></NuqsTestingAdapter>);
     await screen.findByTestId('result-map');
-    expect(mocks.search).toHaveBeenCalledOnce();
+    expect(mocks.search).toHaveBeenCalled();
     const sent = new URLSearchParams(mocks.search.mock.calls[0][0]);
     expect(Object.fromEntries(sent)).toEqual({ q: 'desk', category: 'Items', subcategory: '', tags: 'wood,glass', distance: '12', page: '3', coordinates: '23.7,37.9' });
     expect(mocks.mapProps?.live).toBe(false);

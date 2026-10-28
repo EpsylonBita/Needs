@@ -82,6 +82,7 @@
 .switchButton { display: inline-flex; justify-content: center; align-items: center; gap: 10px; width: 100%; height: auto; min-height: 44px; padding: 10px 2px; border-radius: 10px; white-space: normal; font-size: 13px; line-height: 1.5; color: hsl(var(--foreground)); }
 .switchButton svg { color: hsl(var(--primary)); }
 .registrationForm { gap: 16px; }
+.registrationForm > .phonePrivacy { grid-column: 1 / -1; }
 .registrationForm .input { height: 48px; }
 .registrationForm .visibilityToggle { top: 2px; }
 :global(.dark) .overlay { background: rgb(4 9 17 / .6); }
@@ -96,6 +97,17 @@
   .mobileBrand > span { color: hsl(var(--primary)); }
   .title { font-size: 28px; }
   .input { font-size: 16px; }
+}
+@media (min-width: 701px) {
+  .registrationForm { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 12px; }
+  .registrationForm > .field:nth-child(-n+3), .registrationForm > [role="alert"], .registrationForm > .submit { grid-column: 1 / -1; }
+}
+@media (max-height: 740px) {
+  .scene { min-height: 0; }
+  .content { gap: 16px; padding-top: 30px; padding-bottom: 20px; }
+  .header { gap: 6px; }
+  .mobileBrand { display: none; }
+  .registrationForm { gap: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .input { transition: none; }

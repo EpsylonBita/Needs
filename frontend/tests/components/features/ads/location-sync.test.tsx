@@ -68,7 +68,7 @@ describe('Create listing location state and persistence', () => {
     publish();
     await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({
       coordinates: [23.72, 37.98], address: { label: 'Ermou 10, Athens, Greece' }, tags: expect.arrayContaining(['Athens']),
-    })));
+    }), 'auth-account', expect.any(AbortSignal)));
     expect(boundary.fetch).not.toHaveBeenCalled();
   });
 
@@ -81,7 +81,7 @@ describe('Create listing location state and persistence', () => {
     expect(screen.getByTestId('coordinates')).toHaveTextContent('');
     expect(screen.queryByRole('button', { name: 'Athens' })).not.toBeInTheDocument();
     publish();
-    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ coordinates: [13.4, 52.5], address: { label: 'Berlin' } })));
+    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ coordinates: [13.4, 52.5], address: { label: 'Berlin' } }), 'auth-account', expect.any(AbortSignal)));
   });
 
   it('adds the reverse-geocoded city tag when location is enabled, preserving exclusions', async () => {
@@ -148,7 +148,7 @@ describe('Create listing location state and persistence', () => {
     await screen.findByText(/Your listing created-listing is saved in My Listings/);
     await waitFor(() => expect(screen.getByTestId('overview-count')).toHaveTextContent('1'));
     expect(screen.queryByText('Your listing is published!')).not.toBeInTheDocument();
-    expect(boundary.remove).toHaveBeenCalledWith('created-listing');
+    expect(boundary.remove).toHaveBeenCalledWith('created-listing', 'auth-account');
     expect(close).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Publish listing' })).toBeDisabled();
     expect(screen.getByRole('link', { name: 'Manage photos' })).toHaveAttribute('href', '/dashboard/listings/created-listing/images');
@@ -160,7 +160,7 @@ describe('Create listing location state and persistence', () => {
     publish();
     await screen.findByText('Failed to create ad: Storage unavailable');
     expect(screen.queryByText('Your listing is published!')).not.toBeInTheDocument();
-    expect(boundary.remove).toHaveBeenCalledWith('created-listing');
+    expect(boundary.remove).toHaveBeenCalledWith('created-listing', 'auth-account');
     expect(boundary.overview).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Publish listing' })).toBeEnabled();
     expect(screen.getByLabelText('Title')).toHaveValue('Wooden desk');
@@ -181,7 +181,7 @@ describe('Create listing location state and persistence', () => {
     await fillListing();
     fireEvent.change(screen.getByLabelText('Location'), { target: { value: 'Berlin' } });
     publish();
-    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ coordinates: [13.4, 52.5], address: { label: 'Berlin' } })));
+    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ coordinates: [13.4, 52.5], address: { label: 'Berlin' } }), 'auth-account', expect.any(AbortSignal)));
   });
 
   it('invalidates picked coordinates when the user types a replacement address', async () => {
@@ -192,7 +192,7 @@ describe('Create listing location state and persistence', () => {
     fireEvent.change(screen.getByLabelText('Location'), { target: { value: 'Berlin' } });
     expect(screen.getByTestId('coordinates')).toBeEmptyDOMElement();
     publish();
-    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ coordinates: [13.4, 52.5], address: { label: 'Berlin' } })));
+    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ coordinates: [13.4, 52.5], address: { label: 'Berlin' } }), 'auth-account', expect.any(AbortSignal)));
   });
 
   it('preserves a deliberately picked address when a later description suggests another area', async () => {
@@ -204,7 +204,7 @@ describe('Create listing location state and persistence', () => {
     expect(screen.getByLabelText('Location')).toHaveValue('Athens');
     expect(screen.getByTestId('coordinates')).toHaveTextContent('23.72,37.98');
     publish();
-    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ coordinates: [23.72, 37.98], address: { label: 'Athens' } })));
+    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ coordinates: [23.72, 37.98], address: { label: 'Athens' } }), 'auth-account', expect.any(AbortSignal)));
   });
 
   it('does not overwrite typed text when an earlier reverse-geocoding request completes', async () => {
@@ -233,7 +233,7 @@ describe('Create listing location state and persistence', () => {
     expect(screen.getByLabelText('Location')).toHaveValue('Athens');
     expect(publishButton).toBeEnabled();
     publish();
-    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ coordinates: [23.72, 37.98], address: { label: 'Athens' } })));
+    await waitFor(() => expect(boundary.create).toHaveBeenCalledWith(expect.objectContaining({ coordinates: [23.72, 37.98], address: { label: 'Athens' } }), 'auth-account', expect.any(AbortSignal)));
   });
 
   it.each(['success', 'error'] as const)('ignores an earlier geolocation %s callback while a newer lookup is pending', async outcome => {

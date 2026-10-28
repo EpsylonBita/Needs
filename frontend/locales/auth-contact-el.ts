@@ -1,6 +1,15 @@
 import type { authContactMessages as englishMessages } from './auth-contact-en';
 
 export const authContactMessages: Record<keyof typeof englishMessages, string> = {
+  'auth.publication.need': 'Χρειάζομαι κάτι',
+  'auth.publication.offer': 'Έχω κάτι να προσφέρω',
+  'auth.continue.request': 'Συνδέσου για να δημοσιεύσεις τι χρειάζεσαι. Θα ελέγξεις την αγγελία σου πριν τη δημοσίευση.',
+  'auth.continue.offer': 'Συνδέσου για να προσφέρεις αντικείμενο ή υπηρεσία. Θα ελέγξεις την αγγελία σου πριν τη δημοσίευση.',
+  'auth.continue.listing': 'Συνδέσου για να δημιουργήσεις αγγελία. Τίποτα δεν δημοσιεύεται πριν επιβεβαιώσεις.',
+  'auth.continue.conversation': 'Συνδέσου για να συζητήσεις για την αγγελία «{title}» με τον δημιουργό της.',
+  'auth.continue.thisListing': 'αυτήν την αγγελία',
+  'auth.continue.action': 'Συνέχισε από εκεί που έμεινες',
+  'auth.phonePrivacy': 'Το τηλέφωνο αποθηκεύεται στον λογαριασμό σου και δεν εμφανίζεται στο δημόσιο προφίλ. Προσυμπληρώνεται στις νέες αγγελίες· μπορείς να το αλλάξεις ή να το αφαιρέσεις πριν τη δημοσίευση.',
   'auth.scene.location': 'Αθήνα, πιο κοντά σου',
   'auth.scene.title': 'Η γειτονιά σου.\nΟι άνθρωποί σου.',
   'auth.scene.description': 'Βρες κάτι που χρειάζεσαι. Μοιράσου κάτι που αγαπάς.',

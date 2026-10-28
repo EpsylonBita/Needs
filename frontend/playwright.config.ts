@@ -9,7 +9,8 @@ export default defineConfig({
   timeout: 45_000,
   expect: { timeout: 10_000 },
   reporter: [['list'], ['html', { open: 'never' }]],
-  use: { baseURL: 'http://127.0.0.1:3102', trace: 'retain-on-failure', screenshot: 'only-on-failure', serviceWorkers: 'block' },
+  use: { baseURL: 'http://127.0.0.1:3102', trace: 'retain-on-failure', screenshot: 'only-on-failure', serviceWorkers: 'block',
+    launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH, args: ['--enable-unsafe-swiftshader'] } : undefined },
   projects: [
     { name: 'desktop-chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } } },
     { name: 'mobile-chromium', use: { ...devices['Pixel 7'] } },

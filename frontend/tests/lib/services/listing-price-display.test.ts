@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { formatListingPrice, getListingPriceUnit, listingRequiresAgreedTotal } from '@/lib/listings/price-display';
+import { formatPublishedListingPrice } from '@/lib/listings/price-policy';
 
 describe('Stored listing rate display', () => {
+  it('labels only explicitly free items as Free in both languages', () => {
+    expect(formatPublishedListingPrice(0, 'Previously rented for 10€/hour', 'en', 'Items', 'Free')).toBe('Free');
+    expect(formatPublishedListingPrice(0, '', 'el', 'Items', 'Free')).toBe('Δωρεάν');
+    expect(formatPublishedListingPrice(0, '', 'en', 'Items', 'Buy')).toBe('€0.00');
+    expect(formatPublishedListingPrice(0, '10€/hour', 'en', 'Services', 'I can')).toBe('Price needs confirmation');
+  });
   it.each([
     ['10 ευρω την ωρα', 'hour', /10,00.*€\/ώρα/],
     ['20 euros per day', 'day', /10,00.*€\/ημέρα/],

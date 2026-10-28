@@ -7,6 +7,7 @@ import { Search, Tag, Wrench, Pause, Play, MapPin } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/contexts/i18n-context';
+import { NewListingButton } from '@/components/features/ads/new-listing-button';
 
 type MessagePhase = 'typing' | 'message' | 'leaving' | 'gap';
 const phaseDuration: Record<MessagePhase, number> = { typing: 1400, message: 3600, leaving: 280, gap: 180 };
@@ -84,6 +85,10 @@ export function HeroSection() {
           placeholder={t('search.inputPlaceholder', 'What are you looking for?')} maxLength={200} />
         <Button type="submit">{t('search.header', 'Search')}</Button>
       </form>
+      <div className="needs-city-actions mt-3 flex flex-wrap justify-center gap-3">
+        <NewListingButton intent="request" initialDraft={{ query }} className="min-h-11 h-auto whitespace-normal rounded-xl">{t('auth.publication.need', 'I need something')}</NewListingButton>
+        <NewListingButton intent="offer" initialDraft={{ query }} variant="secondary" className="min-h-11 h-auto whitespace-normal rounded-xl">{t('auth.publication.offer', 'I have something to offer')}</NewListingButton>
+      </div>
       <div className="needs-hero-categories">
         <Link href="/items"><Tag aria-hidden="true" className="h-5 w-5" />{t('navbar.items', 'Items')}</Link>
         <Link href="/services"><Wrench aria-hidden="true" className="h-5 w-5" />{t('navbar.services', 'Services')}</Link>

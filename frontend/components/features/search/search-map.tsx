@@ -1,24 +1,21 @@
 'use client';
 
-import { useMemo } from 'react';
-import dynamic from 'next/dynamic';
+import { useCallback, useMemo, useState } from 'react';
 import { MapPin } from 'lucide-react';
 
 import { useI18n } from '@/contexts/i18n-context';
+import type { MapStatus } from '@/components/features/map/map-component';
+import { MapLoader } from '@/components/features/map/map-loader';
 import type { SearchListing } from './use-listing-search';
+import styles from './search-map.module.css';
 
-function MapLoading() {
+export function SearchMap({ listings, isLoading, returnTo, onStatusChange }: { listings: SearchListing[]; isLoading: boolean; returnTo?: string; onStatusChange?: (status: MapStatus) => void }) {
   const { t } = useI18n();
-  return <div role="status" className="flex h-full items-center justify-center bg-muted/50 text-sm text-muted-foreground">{t('searchModern.mapLoading', 'Loading map…')}</div>;
-}
-
-const Map = dynamic(() => import('@/components/features/map/map-component').then(module => module.Map), {
-  ssr: false,
-  loading: MapLoading,
-});
-
-export function SearchMap({ listings, isLoading }: { listings: SearchListing[]; isLoading: boolean }) {
-  const { t } = useI18n();
+  const [status, setStatus] = useState<MapStatus>('loading');
+  const handleStatus = useCallback((nextStatus: MapStatus) => {
+    setStatus(nextStatus);
+    onStatusChange?.(nextStatus);
+  }, [onStatusChange]);
   const results = useMemo(() => listings.flatMap(listing => {
     const coordinates: unknown = listing.coordinates;
     if (!Array.isArray(coordinates) || coordinates.length !== 2) return [];
@@ -41,16 +38,16 @@ export function SearchMap({ listings, isLoading }: { listings: SearchListing[]; 
     }];
   }), [listings]);
 
-  return <aside className="needs-search-map-panel" aria-label={t('searchModern.mapTitle', 'On the map')}>
+  return <aside className={`needs-search-map-panel${status === 'error' ? ` ${styles.unavailable}` : ''}`} aria-label={t('searchModern.mapTitle', 'On the map')}>
     <div className="needs-search-map-heading">
       <MapPin className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
       <h2 className="font-semibold">{t('searchModern.mapTitle', 'On the map')}</h2>
     </div>
     <div className="needs-search-map-canvas" aria-busy={isLoading}>
-      <Map results={results} live={false} />
-      {isLoading && <p role="status" className="pointer-events-none absolute bottom-8 left-3 right-3 rounded-xl border border-border/60 bg-background/95 px-4 py-3 text-sm text-muted-foreground shadow-sm">{t('searchModern.mapUpdating', 'Updating locations…')}</p>}
-      {!isLoading && listings.length > 0 && results.length === 0 && <p role="status" className="pointer-events-none absolute bottom-8 left-3 right-3 rounded-xl border border-border/60 bg-background/95 px-4 py-3 text-sm text-muted-foreground shadow-sm">{t('searchModern.mapMissingLocations', 'These listings do not have a map location.')}</p>}
+      <MapLoader results={results} live={false} onStatusChange={handleStatus} returnTo={returnTo} />
+      {isLoading && status === 'ready' && <p role="status" className="pointer-events-none absolute bottom-8 left-3 right-3 rounded-xl border border-border/60 bg-background/95 px-4 py-3 text-sm text-muted-foreground shadow-sm">{t('searchModern.mapUpdating', 'Updating locations…')}</p>}
+      {!isLoading && status === 'ready' && listings.length > 0 && results.length === 0 && <p role="status" className="pointer-events-none absolute bottom-8 left-3 right-3 rounded-xl border border-border/60 bg-background/95 px-4 py-3 text-sm text-muted-foreground shadow-sm">{t('searchModern.mapMissingLocations', 'These listings do not have a map location.')}</p>}
     </div>
-    <p>{t('searchModern.mapDescription', 'Locations for the listings on this page.')}</p>
+    {status !== 'error' && <p>{t('searchModern.mapDescription', 'Locations for the listings on this page.')}</p>}
   </aside>;
 }

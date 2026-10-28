@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { supabaseAdmin } from '@/lib/supabase/server'
 import { withApiErrorHandler, ErrorFactory, createValidationError } from '@/lib/utils/error-handler'
 import { listingRequiresAgreedTotal, RATE_PRICE_PAYMENT_ERROR } from '@/lib/listings/price-display'
+import { DEMO_TRANSACTION_ERROR, isDemoListing } from '@/lib/listings/demo-policy'
 
 const schema = z.object({
   listingId: z.string().uuid(),
@@ -23,6 +24,7 @@ export const POST = withApiErrorHandler(async (request: NextRequest) => {
   const validation = schema.safeParse(await request.json())
   if (!validation.success) throw createValidationError('milestone', 'Enter a valid listing, title and positive amount with at most two decimal places')
   const { listingId, title, amount, chatId } = validation.data
+  if (isDemoListing(listingId)) throw createValidationError('listingId', DEMO_TRANSACTION_ERROR)
   const flag = await supabaseAdmin.from('feature_flags').select('enabled').eq('key', 'milestones_enabled').limit(1).single()
   if (flag.error || flag.data?.enabled !== true) throw ErrorFactory.authorization('Milestones are disabled')
   const { data: me, error: profileError } = await supabaseAdmin.from('profiles').select('id').eq('user_id', user.id).limit(1).single()

@@ -11,12 +11,13 @@ export function getSearchResetGeneration(): number {
 
 const searchParsers = {
   q: parseAsString.withDefault(''),
-  category: parseAsString.withDefault(''),
-  subcategory: parseAsString.withDefault(''),
+  category: parseAsString.withDefault('').withOptions({ history: 'push' }),
+  subcategory: parseAsString.withDefault('').withOptions({ history: 'push' }),
   tags: parseAsString.withDefault(''),
-  page: parseAsInteger.withDefault(1),
-  distance: parseAsInteger.withDefault(50),
-  coordinates: parseAsString.withDefault(''),
+  page: parseAsInteger.withDefault(1).withOptions({ history: 'push' }),
+  distance: parseAsInteger.withDefault(50).withOptions({ history: 'push' }),
+  coordinates: parseAsString.withDefault('').withOptions({ history: 'push' }),
+  location: parseAsString.withDefault(''),
 };
 
 /** Share one URL-backed search state across the header, filters and results. */
@@ -36,7 +37,9 @@ export function useSearchState() {
     },
     page: { value: Math.max(1, state.page), set: (value: number) => setState({ page: Math.max(1, value) }) },
     distance: { value: state.distance, set: (value: number) => setState({ distance: value, page: null }) },
-    coordinates: { value: state.coordinates, set: (value: string | null) => setState({ coordinates: value || null, page: null }) },
+    coordinates: { value: state.coordinates, set: (value: string | null) => setState({ coordinates: value || null, location: null, page: null }) },
+    locationLabel: { value: state.location || '' },
+    location: { set: (coordinates: string | null, label = '') => setState({ coordinates: coordinates || null, location: coordinates && label ? label : null, page: null }) },
     reset: () => {
       // Invalidate pending work before the asynchronous URL update begins.
       searchResetGeneration += 1;

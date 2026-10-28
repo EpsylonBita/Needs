@@ -30,6 +30,7 @@ export function ClientSearchPage({ category }: { category?: 'Items' | 'Services'
     if (search.query.value) params.set('q', search.query.value);
     if (search.tags.value.some(Boolean)) params.set('tags', search.tags.value.filter(Boolean).join(','));
     if (search.coordinates.value) params.set('coordinates', search.coordinates.value);
+    if (search.coordinates.value && search.locationLabel.value) params.set('location', search.locationLabel.value);
     if (search.distance.value !== 50) params.set('distance', String(search.distance.value));
     return href + (params.size ? '?' + params.toString() : '');
   }
@@ -48,7 +49,7 @@ export function ClientSearchPage({ category }: { category?: 'Items' | 'Services'
       </button>
     </div>
     <div id={filterId} className={filtersOpen ? 'needs-search-filter-panel' : 'hidden'}>
-      <SearchFilters fixedCategory={category} />
+      <SearchFilters fixedCategory={category} showLocationControl={false} />
     </div>
     <Suspense fallback={<Skeleton className="h-80 rounded-2xl" />}><SearchResults fixedCategory={category} /></Suspense>
   </div>;

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { DEMO_LISTING_IDS, DEMO_PROJECT_ID } from '@/lib/listings/demo-policy'
 
 const state = vi.hoisted(() => ({
   actor: '10000000-0000-4000-8000-000000000001',
@@ -59,6 +60,7 @@ function request(body: Record<string, unknown>) {
 }
 beforeEach(() => {
   vi.clearAllMocks()
+  state.listing = '20000000-0000-4000-8000-000000000001'
   state.actor = state.owner
   state.category = 'Services'; state.subcategory = 'I want'
   state.description = ''; state.price = 100
@@ -68,8 +70,30 @@ beforeEach(() => {
   state.create.mockResolvedValue({ id: 'pi_request', client_secret: 'secret' })
   state.rpc.mockResolvedValue({ data: { payment_id: 'payment', milestone_id: 'milestone' }, error: null })
 })
+afterEach(() => vi.unstubAllEnvs())
 
 describe('Request and offer payment roles', () => {
+  it('rejects sourced demos at every payment/proposal entry before any Stripe or database mutation', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', `https://${DEMO_PROJECT_ID}.supabase.co`)
+    state.listing = DEMO_LISTING_IDS[0]
+    state.chatListing = state.listing
+    state.category = 'Items'; state.subcategory = 'Sell'; state.actor = state.provider
+    for (const endpoint of [checkout, fundMilestone, proposeMilestone]) {
+      const response = await endpoint(request({ chatId: state.chat, title: 'First visit', amount: 40 }))
+      expect(response.status).toBe(400)
+      expect(JSON.stringify(await response.json())).toContain('not available for transactions')
+    }
+    const response = await context(new NextRequest(`http://localhost/api/payments/context?listingId=${state.listing}&chatId=${state.chat}`, { headers: { Authorization: 'Bearer token' } }))
+    expect(response.status).toBe(400)
+    expect(state.create).not.toHaveBeenCalled()
+    expect(state.rpc).not.toHaveBeenCalled()
+  })
+  it('rejects uppercase demo UUIDs before milestone proposal writes', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', `https://${DEMO_PROJECT_ID}.supabase.co`)
+    state.listing = DEMO_LISTING_IDS[0].toUpperCase()
+    expect((await proposeMilestone(request({ chatId: state.chat, title: 'First visit', amount: 40 }))).status).toBe(400)
+    expect(state.rpc).not.toHaveBeenCalled()
+  })
   it('requires price confirmation for stored zero-rate listings instead of suggesting a free exchange', async () => {
     state.description = 'Home care 10€/hour'; state.price = 0;
     const response = await context(new NextRequest(`http://localhost/api/payments/context?listingId=${state.listing}&chatId=${state.chat}`, { headers: { Authorization: 'Bearer token' } }));
